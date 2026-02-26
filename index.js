@@ -29,8 +29,12 @@ const ytdl = require('ytdl-core');
 
 const PREFIX = '#';
 const BOT_NAME = 'SignaBot';
-const OWNER_NUMBER = '559299652961';
-const OWNER_JIDS = [`${OWNER_NUMBER}@s.whatsapp.net`, '559299652961@s.whatsapp.net'];
+const OWNER_NUMBER = '5592999652961';
+// Corrigido: formato correto do JID
+const OWNER_JIDS = [
+  `55${OWNER_NUMBER.replace(/^55/, '')}@s.whatsapp.net`, 
+  '559299652961@s.whatsapp.net'
+];
 
 // Comandos que o dono pode executar mesmo com assinatura expirada
 const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar'];
@@ -71,8 +75,10 @@ const saveAllDB = () => {
   saveDB('schedules', schedules);
 };
 
-// Verificar se usuário é dono
-const isOwner = (sender) => OWNER_JIDS.includes(sender);
+// Verificar se usuário é dono (CORRIGIDO)
+const isOwner = (sender) => {
+  return OWNER_JIDS.some(jid => sender.includes(jid.replace('@s.whatsapp.net', '')));
+};
 
 // Verificar se usuário é admin do grupo
 const isAdmin = async (sock, groupId, userId) => {
@@ -85,7 +91,7 @@ const isAdmin = async (sock, groupId, userId) => {
   }
 };
 
-// Verificar assinatura do grupo - VERSÃO CORRIGIDA
+// Verificar assinatura do grupo
 const checkSubscription = (groupId) => {
   const sub = subscriptions[groupId];
   if (!sub) return { active: false, reason: 'Sem assinatura' };
@@ -201,12 +207,16 @@ const downloadYoutube = async (url, type = 'audio') => {
 };
 
 // ================================
-// HANDLER DE COMANDOS - VERSÃO CORRIGIDA
+// HANDLER DE COMANDOS
 // ================================
 
 const handleCommand = async (sock, message, groupId, sender, command, args, isGroup) => {
   const senderName = message.pushName || 'Usuário';
   const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
+  
+  // Log para debug
+  console.log(`[COMANDO] ${command} de ${sender} no grupo ${groupId}`);
+  console.log(`[OWNER] É dono? ${isOwner(sender)}`);
   
   // Só verifica assinatura se for grupo e NÃO for comando do dono
   if (isGroup && !isOwner(sender)) {
@@ -230,7 +240,12 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   // COMANDOS DO DONO - ASSINATURA
   // ================================
   
-  if (command === '!ativar' && isOwner(sender) && isGroup) {
+  if (command === '!ativar' && isGroup) {
+    // Verifica se é o dono
+    if (!isOwner(sender)) {
+      return reply('❌ Apenas o dono do bot pode usar este comando.');
+    }
+    
     if (args.length < 1) {
       return reply('Use: !ativar [30|60] dias');
     }
@@ -269,7 +284,11 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     return reply(`📊 *Status da Assinatura*\n\n${type}\n⏳ Tempo restante: ${timeLeft}\n📅 Expira em: ${dataExpiracao}`);
   }
   
-  if (command === '!cancelar' && isOwner(sender) && isGroup) {
+  if (command === '!cancelar' && isGroup) {
+    if (!isOwner(sender)) {
+      return reply('❌ Apenas o dono do bot pode usar este comando.');
+    }
+    
     if (!subscriptions[groupId]) {
       return reply('❌ Este grupo não possui assinatura ativa.');
     }
@@ -280,7 +299,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   }
   
   // ================================
-  // COMANDOS GERAIS - MENU (VERSÃO ADAPTADA)
+  // COMANDOS GERAIS - MENU
   // ================================
   
   if (command === '#menu') {
@@ -292,7 +311,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
         statusText = `\n⚠️ *Acesso Bloqueado*\nMotivo: ${sub.reason}\n`;
       } else {
         const timeLeft = formatTimeRemaining(sub.expiresAt);
-        statusText = `\n📊 Status: ${sub.type === 'trial' ? 'Teste' : 'Ativo'} (${timeLeft} restantes)\n`;
+        statusText = `\n📊 Status: ${sub.type === 'trial' ? '🔰 Teste' : '💎 Ativo'} (${timeLeft} restantes)\n`;
       }
     }
     
@@ -303,12 +322,12 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ${statusText}
 📋 *Menus Disponíveis:*
 
-⎨⎟⟐⃟➪ #menu-figurinhas
-⎨⎟⟐⃟➪ #menu-brincadeiras
-⎨⎟⟐⃟➪ #menu-adm
-⎨⎟⟐⃟➪ #menu-download
-⎨⎟⟐⃟➪ #menu-info
-⎨⎟⟐⃟➪ #menu-grupo
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-figurinhas
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-brincadeiras
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-adm
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-download
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-info
+${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-grupo
 
 💎 *Assinatura:*
 !status - Ver status da assinatura
@@ -321,6 +340,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#menu-figurinhas') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     return reply(`
 📦 *Menu Figurinhas*
 
@@ -332,6 +359,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#menu-download') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     return reply(`
 📥 *Menu Download*
 
@@ -344,6 +379,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#menu-adm') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     if (!adminCheck && !isOwner(sender)) {
       return reply('❌ Apenas admins podem usar este comando.');
     }
@@ -366,6 +409,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#menu-grupo') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     return reply(`
 👥 *Menu Grupo*
 
@@ -377,6 +428,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#menu-info') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     return reply(`
 ℹ️ *Menu Informações*
 
