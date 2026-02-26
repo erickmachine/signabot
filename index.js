@@ -3,12 +3,7 @@ const {
   DisconnectReason,
   useMultiFileAuthState,
   downloadContentFromMessage,
-  jidDecode,
-  generateWAMessageFromContent,
-  proto,
-  prepareWAMessageMedia,
   fetchLatestBaileysVersion,
-  Browsers,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
@@ -17,13 +12,13 @@ const axios = require('axios');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const yts = require('yt-search');
-const ytdl = require('ytdl-core');
 
-// ================================
+// ============================================================
 // SIGNABOT - Bot WhatsApp Completo
-// ================================
+// ============================================================
 
 const PREFIX = '#';
+const PREFIX2 = '/';
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961'; // SEU NÚMERO AQUI
 const BOT_NUMBER = '557183477259'; // Número do bot que aparece nos logs
@@ -52,6 +47,7 @@ const isOwner = (sender) => {
   // Verificar se o número corresponde
   const isNumberMatch = senderNumber === ownerNumber || senderNumber === botNumber;
   
+  // Log para debug
   console.log(`[DEBUG] Verificando dono:`);
   console.log(`[DEBUG] Sender original: ${sender}`);
   console.log(`[DEBUG] Sender número: ${senderNumber}`);
@@ -64,20 +60,17 @@ const isOwner = (sender) => {
   return isInList || isNumberMatch;
 };
 
-// Comandos que o dono pode executar mesmo com assinatura expirada
-const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar', '!desativar', '!renovar'];
+// ============================================================
+// BANCO DE DADOS JSON LOCAL
+// ============================================================
 
-// Base de dados em JSON
 const DATA_DIR = path.join(__dirname, 'database');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const loadDB = (name) => {
   const file = path.join(DATA_DIR, `${name}.json`);
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, '{}');
-    return {};
-  }
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!fs.existsSync(file)) { fs.writeFileSync(file, '{}'); return {}; }
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
 };
 
 const saveDB = (name, data) => {
@@ -85,847 +78,1482 @@ const saveDB = (name, data) => {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 };
 
-// Databases
+// Carrega todos os bancos
 let subscriptions = loadDB('subscriptions');
-let warnings = loadDB('warnings');
-let blacklist = loadDB('blacklist');
+let warnings      = loadDB('warnings');
+let blacklist     = loadDB('blacklist');
 let groupSettings = loadDB('groupSettings');
-let userActivity = loadDB('userActivity');
-let schedules = loadDB('schedules');
+let userActivity  = loadDB('userActivity');
+let schedules     = loadDB('schedules');
+let notes         = loadDB('notes');
+let birthdays     = loadDB('birthdays');
+let muted         = loadDB('muted');
+let cargos        = loadDB('cargos');       // { groupId: { userId: 'admin'|'mod'|'aux' } }
+let afkList       = loadDB('afkList');      // { userId: { msg, time } }
+let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
+let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
 
-// Função para salvar todos os DBs
-const saveAllDB = () => {
-  saveDB('subscriptions', subscriptions);
-  saveDB('warnings', warnings);
-  saveDB('blacklist', blacklist);
-  saveDB('groupSettings', groupSettings);
-  saveDB('userActivity', userActivity);
-  saveDB('schedules', schedules);
-};
+// ============================================================
+// HELPERS GERAIS
+// ============================================================
 
-// Verificar se usuário é admin do grupo
 const isAdmin = async (sock, groupId, userId) => {
   try {
-    const groupMetadata = await sock.groupMetadata(groupId);
-    const participant = groupMetadata.participants.find((p) => p.id === userId);
-    return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
-  } catch {
-    return false;
-  }
+    const meta = await sock.groupMetadata(groupId);
+    const p = meta.participants.find((x) => x.id === userId);
+    return p && (p.admin === 'admin' || p.admin === 'superadmin');
+  } catch { return false; }
 };
 
-// Verificar assinatura do grupo
-const checkSubscription = (groupId) => {
-  const sub = subscriptions[groupId];
-  if (!sub) return { active: false, reason: 'Sem assinatura' };
-  
-  const now = Date.now();
-  
-  // Se já expirou, retorna inativo independente do tipo
-  if (now > sub.expiresAt) {
-    return { 
-      active: false, 
-      reason: sub.type === 'trial' ? 'Teste grátis expirado' : 'Assinatura expirada',
-      type: sub.type,
-      expiresAt: sub.expiresAt 
-    };
-  }
-  
-  // Ainda está ativo
-  return { 
-    active: true, 
-    type: sub.type, 
-    expiresAt: sub.expiresAt 
-  };
+const getCargo = (groupId, userId) => {
+  if (!cargos[groupId]) return null;
+  return cargos[groupId][userId] || null;
 };
 
-// Formatar tempo restante
-const formatTimeRemaining = (expiresAt) => {
-  const now = Date.now();
-  const diff = expiresAt - now;
-  if (diff <= 0) return 'Expirado';
-  
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+const hasCargo = (groupId, userId, ...allowed) => {
+  const c = getCargo(groupId, userId);
+  return allowed.includes(c);
 };
 
-// Registrar atividade do usuário
-const logActivity = (groupId, userId) => {
-  if (!userActivity[groupId]) userActivity[groupId] = {};
-  userActivity[groupId][userId] = {
-    lastActive: Date.now(),
-    messageCount: (userActivity[groupId][userId]?.messageCount || 0) + 1,
-  };
-  saveDB('userActivity', userActivity);
-};
-
-// Obter configurações do grupo
 const getGroupSettings = (groupId) => {
   if (!groupSettings[groupId]) {
     groupSettings[groupId] = {
       antilink: false,
-      welcome: false,
+      antilinkAllow: ['instagram.com', 'youtube.com', 'youtu.be', 'tiktok.com'],
+      welcome: true,
+      welcomeMsg: '',
+      leaveMsg: '',
       antiSpam: false,
       autoBaixar: false,
       simih: false,
       antiPalavra: false,
       palavroes: [],
-      bemVindoMsg: 'Bem-vindo(a) ao grupo!',
-      saiuMsg: 'Saiu do grupo.',
+      antiImg: false,
+      antiVideo: false,
+      antiAudio: false,
+      antiDoc: false,
+      antiSticker: false,
+      antiContato: false,
+      antiLoc: false,
+      soAdm: false,
+      mute: false,
+      openAt: null,
+      closeAt: null,
+      warningLimit: 3,
+      antiViewOnce: false,
     };
     saveDB('groupSettings', groupSettings);
   }
   return groupSettings[groupId];
 };
 
-// ================================
-// FUNÇÕES DE MÍDIA E DOWNLOAD
-// ================================
+const saveSettings = () => saveDB('groupSettings', groupSettings);
 
-const downloadMediaMessage = async (message) => {
-  try {
-    const buffer = await downloadContentFromMessage(
-      message,
-      message.imageMessage ? 'image' : message.videoMessage ? 'video' : 'audio'
-    );
-    let data = Buffer.from([]);
-    for await (const chunk of buffer) {
-      data = Buffer.concat([data, chunk]);
-    }
-    return data;
-  } catch {
-    return null;
-  }
+const checkSubscription = (groupId) => {
+  const sub = subscriptions[groupId];
+  if (!sub) return { active: false, reason: 'Sem assinatura. Entre em contato: wa.me/' + OWNER_NUMBER };
+  const now = Date.now();
+  if (now > sub.expiresAt) return { active: false, reason: sub.type === 'trial' ? 'Teste gratis expirado' : 'Assinatura expirada' };
+  return { active: true, type: sub.type, expiresAt: sub.expiresAt };
 };
 
-const searchYoutube = async (query) => {
-  try {
-    const result = await yts(query);
-    return result.videos.length > 0 ? result.videos[0] : null;
-  } catch {
-    return null;
-  }
+const formatTime = (ms) => {
+  if (ms <= 0) return 'Expirado';
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `${d}d ${h}h ${m}m`;
 };
 
-const downloadYoutube = async (url, type = 'audio') => {
-  try {
-    const info = await ytdl.getInfo(url);
-    const format = type === 'audio' 
-      ? ytdl.chooseFormat(info.formats, { quality: 'highestaudio' })
-      : ytdl.chooseFormat(info.formats, { quality: 'highest' });
-    
-    return {
-      stream: ytdl(url, { format }),
-      title: info.videoDetails.title,
-      thumbnail: info.videoDetails.thumbnails[0].url,
-    };
-  } catch {
-    return null;
-  }
+const logActivity = (groupId, userId) => {
+  if (!userActivity[groupId]) userActivity[groupId] = {};
+  const u = userActivity[groupId][userId] || { messageCount: 0, lastActive: 0 };
+  u.messageCount++;
+  u.lastActive = Date.now();
+  userActivity[groupId][userId] = u;
+  saveDB('userActivity', userActivity);
 };
 
-// ================================
+const getMentioned = (message) =>
+  message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+
+const getQuoted = (message) =>
+  message.message?.extendedTextMessage?.contextInfo?.quotedMessage || null;
+
+const getQuotedSender = (message) =>
+  message.message?.extendedTextMessage?.contextInfo?.participant || null;
+
+// Download de mídia via Baileys
+const downloadMedia = async (msgContent, type) => {
+  try {
+    const stream = await downloadContentFromMessage(msgContent, type);
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+    return buffer;
+  } catch { return null; }
+};
+
+// ============================================================
 // HANDLER DE COMANDOS
-// ================================
+// ============================================================
 
 const handleCommand = async (sock, message, groupId, sender, command, args, isGroup) => {
-  const senderName = message.pushName || 'Usuário';
+  const senderName = message.pushName || sender.split('@')[0];
   const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
-  
-  // Log detalhado para debug
-  console.log('\n========== NOVO COMANDO ==========');
-  console.log(`[COMANDO] ${command}`);
-  console.log(`[SENDER] ${sender}`);
-  console.log(`[GRUPO] ${groupId}`);
-  console.log(`[É DONO?] ${isOwner(sender)}`);
-  console.log(`[ARGS]`, args);
-  console.log('=================================\n');
-  
-  // Só verifica assinatura se for grupo
-  if (isGroup) {
+  const replyImg = (buffer, caption) => sock.sendMessage(groupId, { image: buffer, caption }, { quoted: message });
+  const adminCheck = isGroup ? await isAdmin(sock, groupId, sender) : false;
+  const ownerCheck = isOwner(sender);
+  const cargoCheck = (groupId, ...c) => ownerCheck || adminCheck || hasCargo(groupId, sender, ...c);
+
+  // Verificar assinatura (pular comandos de assinatura e info)
+  const skipSubCheck = ['!ativar', '!status', '!cancelar', '#ping', '#info', '#dono', '#menu'].includes(command)
+    || command.startsWith('!') || ownerCheck;
+
+  if (isGroup && !skipSubCheck) {
     const sub = checkSubscription(groupId);
-    const ownerCheck = isOwner(sender);
-    
-    console.log(`[ASSINATURA] Ativa? ${sub.active}, Tipo: ${sub.type}, Dono? ${ownerCheck}`);
-    
-    // Se não estiver ativo e NÃO for o dono, bloqueia
-    if (!sub.active && !ownerCheck) {
-      console.log(`[BLOQUEADO] Usuário comum tentou comando com assinatura expirada`);
-      
-      // Permite apenas #menu para informar sobre a assinatura
-      if (command === '#menu') {
-        // Deixa passar para mostrar o menu
-      } else {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nEntre em contato com o dono para ativar:\nwa.me/${OWNER_NUMBER}`);
-      }
+    if (!sub.active) {
+      return reply(`Aviso: ${sub.reason}. Entre em contato com o dono para ativar.`);
     }
   }
-  
-  const settings = getGroupSettings(groupId);
-  const adminCheck = isGroup ? await isAdmin(sock, groupId, sender) : false;
-  
-  // ================================
-  // COMANDOS DO DONO - ASSINATURA
-  // ================================
-  
-  if (command === '!ativar' && isGroup) {
+
+  const settings = isGroup ? getGroupSettings(groupId) : {};
+
+  // ===========================================================
+  // ASSINATURA (dono)
+  // ===========================================================
+
+  if (command === '!ativar') {
     console.log(`[!ATIVAR] Executando comando de ativação`);
     
-    // Verifica se é o dono
-    if (!isOwner(sender)) {
+    if (!ownerCheck) {
       console.log(`[!ATIVAR] NEGADO - Não é o dono`);
-      return reply('❌ Apenas o dono do bot pode usar este comando.');
+      return reply('Sem permissao.');
     }
     
-    if (args.length < 1) {
-      return reply('Use: !ativar [30|60]');
-    }
+    if (!isGroup) return reply('Use em um grupo.');
     
     const days = parseInt(args[0]);
-    if (![30, 60].includes(days)) {
-      return reply('Escolha 30 ou 60 dias.');
-    }
+    if (![7, 15, 30, 60, 90].includes(days)) return reply('Use: !ativar [7|15|30|60|90] dias');
     
-    const expiresAt = Date.now() + (days * 24 * 60 * 60 * 1000);
-    subscriptions[groupId] = {
-      type: 'paid',
-      activatedAt: Date.now(),
-      expiresAt,
-      days,
-      notified: false
-    };
+    const expiresAt = Date.now() + days * 86400000;
+    subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
     saveDB('subscriptions', subscriptions);
     
-    const dataExpiracao = new Date(expiresAt).toLocaleString('pt-BR');
-    console.log(`[!ATIVAR] Assinatura ativada para ${groupId} até ${dataExpiracao}`);
+    console.log(`[!ATIVAR] Assinatura ativada para ${groupId} até ${new Date(expiresAt).toLocaleString('pt-BR')}`);
     
-    return reply(`✅ *Assinatura Ativada!*\n\n📆 Período: ${days} dias\n⏰ Expira em: ${dataExpiracao}\n\nAgora o grupo pode usar todos os comandos!`);
+    return reply(`Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
   }
-  
-  if (command === '!status' && isGroup) {
-    const sub = checkSubscription(groupId);
-    
-    if (!sub.active) {
-      const dataExpiracao = sub.expiresAt ? new Date(sub.expiresAt).toLocaleString('pt-BR') : 'N/A';
-      return reply(`❌ *Assinatura Inativa*\n\nMotivo: ${sub.reason}\nExpirou em: ${dataExpiracao}\n\nContate o dono para ativar:\nwa.me/${OWNER_NUMBER}`);
-    }
-    
-    const timeLeft = formatTimeRemaining(sub.expiresAt);
-    const type = sub.type === 'trial' ? '🔰 Teste Grátis' : '💎 Assinatura Paga';
-    const dataExpiracao = new Date(sub.expiresAt).toLocaleString('pt-BR');
-    
-    return reply(`📊 *Status da Assinatura*\n\n${type}\n⏳ Tempo restante: ${timeLeft}\n📅 Expira em: ${dataExpiracao}`);
+
+  if (command === '!trial') {
+    if (!ownerCheck) return reply('Sem permissao.');
+    if (!isGroup) return reply('Use em um grupo.');
+    const mins = parseInt(args[0]) || 10;
+    subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
+    saveDB('subscriptions', subscriptions);
+    return reply(`Teste de ${mins} minuto(s) ativado!`);
   }
-  
-  if (command === '!cancelar' && isGroup) {
-    if (!isOwner(sender)) {
-      return reply('❌ Apenas o dono do bot pode usar este comando.');
-    }
-    
-    if (!subscriptions[groupId]) {
-      return reply('❌ Este grupo não possui assinatura ativa.');
-    }
-    
+
+  if (command === '!cancelar') {
+    if (!ownerCheck) return reply('Sem permissao.');
     delete subscriptions[groupId];
     saveDB('subscriptions', subscriptions);
-    return reply('🚫 *Assinatura Cancelada*\n\nO grupo não terá mais acesso aos comandos.');
+    return reply('Assinatura cancelada.');
   }
-  
-  // ================================
-  // COMANDOS GERAIS - MENU
-  // ================================
-  
+
+  if (command === '!status' || command === '#status') {
+    if (!isGroup) return reply('Use em um grupo.');
+    const sub = checkSubscription(groupId);
+    if (!sub.active) return reply(`Status: ${sub.reason}`);
+    const left = sub.expiresAt - Date.now();
+    return reply(`Status da Assinatura\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
+  }
+
+  // ===========================================================
+  // MENU PRINCIPAL
+  // ===========================================================
+
   if (command === '#menu') {
-    const sub = isGroup ? checkSubscription(groupId) : { active: true };
-    const ownerCheck = isOwner(sender);
-    
-    let statusText = '';
-    if (isGroup && !ownerCheck) {
-      if (!sub.active) {
-        statusText = `\n⚠️ *Acesso Bloqueado*\nMotivo: ${sub.reason}\n`;
-      } else {
-        const timeLeft = formatTimeRemaining(sub.expiresAt);
-        statusText = `\n📊 Status: ${sub.type === 'trial' ? '🔰 Teste' : '💎 Ativo'} (${timeLeft} restantes)\n`;
-      }
-    } else if (ownerCheck) {
-      statusText = `\n👑 *Modo Dono*\n`;
+    const sub = args[0]?.toLowerCase();
+
+    if (!sub) {
+      return reply(`*${BOT_NAME} - Menu Principal*\n\nEscolha um submenu:\n\n${PREFIX}menu figurinhas\n${PREFIX}menu brincadeiras\n${PREFIX}menu efeitos\n${PREFIX}menu adm\n${PREFIX}menu download\n${PREFIX}menu info\n${PREFIX}menu grupo\n${PREFIX}menu gold\n\nInfo:\n${PREFIX}ping - Latencia\n${PREFIX}dono - Contato\n!status - Assinatura`);
     }
-    
-    const menuText = `
-╔═══════════════════╗
-║   ${BOT_NAME} - Menu Principal   ║
-╚═══════════════════╝
-${statusText}
-📋 *Menus Disponíveis:*
 
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-figurinhas
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-brincadeiras
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-adm
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-download
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-info
-${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-grupo
+    if (sub === 'figurinhas') {
+      return reply(`*Menu Figurinhas*\n\n${PREFIX}sticker - Imagem/video para figurinha\n${PREFIX}toimg - Figurinha para imagem\n${PREFIX}take [autor] [pack] - Renomear figurinha\n${PREFIX}togif - Figurinha para GIF\n${PREFIX}tomp4 - Figurinha para video\n${PREFIX}ttp [texto] - Texto para figurinha\n${PREFIX}fig - Criar figurinha`);
+    }
 
-💎 *Assinatura:*
-!status - Ver status da assinatura
+    if (sub === 'download') {
+      return reply(`*Menu Download*\n\n${PREFIX}play [nome/url] - Audio do YouTube\n${PREFIX}playvideo [nome/url] - Video do YouTube\n${PREFIX}ytmp4 [url] - YouTube MP4\n${PREFIX}tiktok [url] - Baixar TikTok\n${PREFIX}instagram [url] - Baixar Instagram\n${PREFIX}pinterest [busca] - Imagens Pinterest\n${PREFIX}spotify [nome] - Buscar no Spotify\n${PREFIX}letra [musica] - Letra da musica\n${PREFIX}autobaixar [on/off] - Auto-baixar links`);
+    }
 
-🔧 *Desenvolvido por:*
-wa.me/${OWNER_NUMBER}
-    `.trim();
-    
-    return reply(menuText);
+    if (sub === 'adm') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao para ver este menu.');
+      return reply(`*Menu ADM*\n\n${PREFIX}ban @user - Banir\n${PREFIX}add [num] - Adicionar membro\n${PREFIX}promover @user - Promover a admin\n${PREFIX}rebaixar @user - Remover admin\n${PREFIX}cargo @user [admin|mod|aux] - Atribuir cargo\n${PREFIX}advertir @user [motivo] - Advertir\n${PREFIX}checkwarnings @user - Ver adv.\n${PREFIX}removewarnings @user - Remover adv.\n${PREFIX}marcar [texto] - Marcar todos\n${PREFIX}tagall [texto] - Marcar todos\n${PREFIX}bemvindo [on/off] - Boas-vindas\n${PREFIX}antilink [on/off] - Antilink\n${PREFIX}fechargp - Fechar grupo\n${PREFIX}abrirgp - Abrir grupo\n${PREFIX}banghost - Banir fantasmas\n${PREFIX}inativos [dias] - Ver inativos\n${PREFIX}nomegp [nome] - Mudar nome\n${PREFIX}descgp [desc] - Mudar descricao\n${PREFIX}linkgp - Link do grupo\n${PREFIX}regras [texto] - Definir regras\n${PREFIX}deletar - Apagar msg marcada\n${PREFIX}mute @user - Mutar membro\n${PREFIX}desmute @user - Desmutar membro\n${PREFIX}listanegra add [num] - Lista negra\n${PREFIX}listanegra rem [num] - Remover da lista\n${PREFIX}listanegra ver - Ver lista\n${PREFIX}setlimitec [num] - Limite de adv.\n${PREFIX}sorteio [texto] - Sortear membro\n${PREFIX}mensagem-automatica [hora HH:MM] [texto] - Agendar\n${PREFIX}listar-mensagens-automaticas\n${PREFIX}limpar-mensagens-automaticas\n${PREFIX}anotar [texto] - Salvar nota\n${PREFIX}anotacao - Ver notas\n${PREFIX}tirar_nota [num] - Apagar nota\n${PREFIX}so_adm [on/off] - Apenas admins\n${PREFIX}antipalavra [on/off]\n${PREFIX}addpalavra [palavra] - Adicionar palavrao\n${PREFIX}delpalavra [palavra] - Remover palavrao\n${PREFIX}listapalavrao - Ver palavroes\n${PREFIX}anticall [on/off] - Bloquear chamadas\n${PREFIX}x9visuunica [on/off] - Revelar view-once\n${PREFIX}ausente [texto] - Modo ausente\n${PREFIX}ativo - Voltar de ausente`);
+    }
+
+    if (sub === 'brincadeiras') {
+      return reply(`*Menu Brincadeiras*\n\n${PREFIX}ppt - Pedra Papel Tesoura\n${PREFIX}dadosorte - Dado da sorte\n${PREFIX}porcentagem [texto] - Calcular %\n${PREFIX}chance [texto] - Calcular chance\n${PREFIX}sorteio - Sortear membro\n${PREFIX}dado [lados] - Rolar dado\n${PREFIX}rankgay - Ranking gay\n${PREFIX}rankgado - Ranking gado\n${PREFIX}rankgostosa - Ranking gostosa\n${PREFIX}rankgostoso - Ranking gostoso\n${PREFIX}rankcorno - Ranking corno\n${PREFIX}8ball [pergunta] - Bola magica\n${PREFIX}verdadeoudesafio - V ou D\n${PREFIX}eujaeununca - Eu ja e nunca\n${PREFIX}fakemsg @user [texto] - Mensagem falsa\n${PREFIX}casal - Sortear casal\n${PREFIX}bot - Ver se o bot esta acordado`);
+    }
+
+    if (sub === 'efeitos') {
+      return reply(`*Menu Efeitos*\n\n${PREFIX}blur - Desfoque na imagem marcada\n${PREFIX}greyscale - Escala de cinza\n${PREFIX}sepia - Efeito sepia\n${PREFIX}invert - Inverter cores\n${PREFIX}triggered - Efeito triggered\n${PREFIX}jail - Efeito prisao\n${PREFIX}wasted - Efeito wasted\n${PREFIX}gay - Efeito arco-iris\n${PREFIX}totext - Imagem para texto\n${PREFIX}traduzir [idioma] - Traduzir audio/texto`);
+    }
+
+    if (sub === 'grupo') {
+      return reply(`*Menu Grupo*\n\n${PREFIX}rankativos - Top 10 mais ativos\n${PREFIX}rankativosg - Top 5 atividade hoje\n${PREFIX}inativos [dias] - Membros inativos\n${PREFIX}gpinfo - Info do grupo\n${PREFIX}admins - Lista de admins\n${PREFIX}regras - Ver regras do grupo\n${PREFIX}aniversario [dia/mes] - Cadastrar aniversario\n${PREFIX}meuaniversario - Ver seu aniversario\n${PREFIX}feedback [texto] - Enviar feedback\n${PREFIX}listarafk - Ver lista AFK`);
+    }
+
+    if (sub === 'info') {
+      return reply(`*Menu Info*\n\n${PREFIX}info - Info do bot\n${PREFIX}dono - Contato do dono\n${PREFIX}ping - Latencia\n${PREFIX}ping2 - Uptime\n${PREFIX}sender - Seu numero\n${PREFIX}imc [peso] [altura] - Calcular IMC\n${PREFIX}calculadora [expr] - Calcular\n${PREFIX}cep [cep] - Buscar CEP\n${PREFIX}signo [data DD/MM] - Ver signo\n${PREFIX}wikipedia [busca] - Buscar na Wikipedia\n${PREFIX}traduzir [en] [texto] - Traduzir\n${PREFIX}clima [cidade] - Clima atual\n${PREFIX}horario - Horario atual`);
+    }
+
+    if (sub === 'gold') {
+      return reply(`*Menu Gold*\n\n${PREFIX}gold - Ver seus golds\n${PREFIX}rankgold - Ranking de golds\n${PREFIX}doargold @user [qtd] - Doar golds\n${PREFIX}minerar_gold - Minerar golds\n${PREFIX}daily - Recompensa diaria\n${PREFIX}roubargold @user - Roubar golds\n${PREFIX}apostar [qtd] - Apostar golds\n${PREFIX}cassino [qtd] - Cassino\n${PREFIX}roletadasorte [qtd] - Roleta\n${PREFIX}doublegold [qtd] - Dobrar aposta`);
+    }
+
+    return reply('Submenu nao encontrado. Use #menu para ver os disponiveis.');
   }
-  
-  if (command === '#menu-figurinhas') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    return reply(`
-📦 *Menu Figurinhas*
 
-#sticker - Criar figurinha (marque imagem/vídeo)
-#toimg - Converter figurinha em imagem
-#take [autor] [pack] - Mudar autor da figurinha
-#emoji [emoji] - Criar figurinha de emoji
-    `.trim());
-  }
-  
-  if (command === '#menu-download') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    return reply(`
-📥 *Menu Download*
+  // ===========================================================
+  // INFO / UTILITARIOS
+  // ===========================================================
 
-#play [nome/url] - Baixar áudio do YouTube
-#playvideo [nome/url] - Baixar vídeo do YouTube
-#tiktok [url] - Baixar vídeo do TikTok
-#instagram [url] - Baixar do Instagram
-#pinterest [busca] - Buscar imagens
-    `.trim());
+  if (command === '#ping') {
+    const start = Date.now();
+    await reply('Calculando...');
+    return reply(`Pong! Latencia: ${Date.now() - start}ms`);
   }
-  
-  if (command === '#menu-adm') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    return reply(`
-👑 *Menu Administração*
 
-#ban @usuario - Banir membro
-#add [número] - Adicionar membro
-#promover @usuario - Promover a admin
-#rebaixar @usuario - Remover admin
-#grupo [abrir|fechar] - Abrir/fechar grupo
-#linkgp - Link do grupo
-#marcar [texto] - Marcar todos
-#advertir @usuario - Advertir membro
-#checkwarnings @usuario - Ver advertências
-#bemvindo [on|off] - Ativar/desativar boas-vindas
-#antilink [on|off] - Ativar/desativar antilink
-    `.trim());
+  if (command === '#ping2') {
+    const uptime = process.uptime();
+    const h = Math.floor(uptime / 3600);
+    const m = Math.floor((uptime % 3600) / 60);
+    const s = Math.floor(uptime % 60);
+    return reply(`Bot online ha ${h}h ${m}m ${s}s`);
   }
-  
-  if (command === '#menu-grupo') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    return reply(`
-👥 *Menu Grupo*
 
-#rankativos - Ranking de atividade
-#inativos [dias] - Ver membros inativos
-#gpinfo - Informações do grupo
-#regras - Regras do grupo
-    `.trim());
+  if (command === '#info') {
+    return reply(`*${BOT_NAME}*\n\nVersao: 2.0\nStatus: Online\nDono: wa.me/${OWNER_NUMBER}\nPrefixos: # e /\n\nDigite #menu para ver os comandos.`);
   }
-  
-  if (command === '#menu-info') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    return reply(`
-ℹ️ *Menu Informações*
 
-#info - Informações do bot
-#dono - Contato do dono
-#ping - Velocidade do bot
-#idiomas - Idiomas suportados
-    `.trim());
+  if (command === '#dono') {
+    return reply(`Dono do bot:\nwa.me/${OWNER_NUMBER}\n\nPara contratar o ${BOT_NAME} para o seu grupo, entre em contato!`);
   }
-  
-  // ================================
-  // COMANDOS - FIGURINHAS
-  // ================================
-  
-  if (command === '#sticker' || command === '#fig') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-    if (!quoted || (!quoted.imageMessage && !quoted.videoMessage)) {
-      return reply('❌ Marque uma imagem ou vídeo!');
-    }
-    
+
+  if (command === '#sender') {
+    const num = sender.split('@')[0];
+    return reply(`Seu numero: +${num}`);
+  }
+
+  if (command === '#horario') {
+    return reply(`Horario atual (Brasilia):\n${new Date().toLocaleString('pt-BR', { timeZone: 'America/Manaus' })}`);
+  }
+
+  if (command === '#imc') {
+    if (args.length < 2) return reply('Use: #imc [peso em kg] [altura em m]\nEx: #imc 70 1.75');
+    const peso = parseFloat(args[0].replace(',', '.'));
+    const altura = parseFloat(args[1].replace(',', '.'));
+    if (isNaN(peso) || isNaN(altura) || altura === 0) return reply('Valores invalidos.');
+    const imc = (peso / (altura * altura)).toFixed(2);
+    let cat = '';
+    if (imc < 18.5) cat = 'Abaixo do peso';
+    else if (imc < 25) cat = 'Peso normal';
+    else if (imc < 30) cat = 'Sobrepeso';
+    else if (imc < 35) cat = 'Obesidade Grau I';
+    else if (imc < 40) cat = 'Obesidade Grau II';
+    else cat = 'Obesidade Grau III';
+    return reply(`Seu IMC: ${imc}\nClassificacao: ${cat}`);
+  }
+
+  if (command === '#calculadora' || command === '#calc') {
+    if (args.length === 0) return reply('Use: #calculadora [expressao]\nEx: #calculadora 2+2*3');
     try {
-      const media = await downloadMediaMessage(
-        quoted.imageMessage || quoted.videoMessage
+      const expr = args.join(' ').replace(/[^0-9+\-*/().% ]/g, '');
+      // eslint-disable-next-line no-eval
+      const result = Function('"use strict"; return (' + expr + ')')();
+      return reply(`${expr} = ${result}`);
+    } catch { return reply('Expressao invalida.'); }
+  }
+
+  if (command === '#cep') {
+    if (args.length === 0) return reply('Use: #cep [CEP]');
+    const cep = args[0].replace(/\D/g, '');
+    try {
+      const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`, { timeout: 8000 });
+      if (data.erro) return reply('CEP nao encontrado.');
+      return reply(`CEP: ${data.cep}\nLogradouro: ${data.logradouro || '-'}\nBairro: ${data.bairro || '-'}\nCidade: ${data.localidade} - ${data.uf}`);
+    } catch { return reply('Erro ao buscar CEP.'); }
+  }
+
+  if (command === '#wikipedia' || command === '#wiki') {
+    if (args.length === 0) return reply('Use: #wikipedia [busca]');
+    try {
+      const busca = encodeURIComponent(args.join(' '));
+      const { data } = await axios.get(
+        `https://pt.wikipedia.org/api/rest_v1/page/summary/${busca}`,
+        { timeout: 8000 }
       );
-      
-      if (!media) {
-        return reply('❌ Erro ao baixar mídia.');
-      }
-      
-      await sock.sendMessage(groupId, {
-        sticker: media,
-      }, { quoted: message });
-    } catch (err) {
-      return reply('❌ Erro ao criar figurinha: ' + err.message);
-    }
+      return reply(`*${data.title}*\n\n${data.extract}\n\nFonte: ${data.content_urls?.desktop?.page || 'Wikipedia'}`);
+    } catch { return reply('Nenhum resultado encontrado.'); }
   }
-  
-  // ================================
-  // COMANDOS - DOWNLOAD
-  // ================================
-  
-  if (command === '#play') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    if (args.length === 0) {
-      return reply('❌ Use: #play [nome da música]');
-    }
-    
-    const query = args.join(' ');
-    const video = await searchYoutube(query);
-    
-    if (!video) {
-      return reply('❌ Nenhum resultado encontrado.');
-    }
-    
-    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n⏳ Baixando áudio...`);
-    
+
+  if (command === '#traduzir') {
+    if (args.length < 2) return reply('Use: #traduzir [idioma] [texto]\nEx: #traduzir en Ola mundo');
+    const lang = args[0];
+    const text = args.slice(1).join(' ');
     try {
-      const download = await downloadYoutube(video.url, 'audio');
-      if (!download) {
-        return reply('❌ Erro ao baixar áudio.');
-      }
-      
+      const { data } = await axios.get(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=pt|${lang}`,
+        { timeout: 8000 }
+      );
+      return reply(`Traducao (${lang}):\n${data.responseData.translatedText}`);
+    } catch { return reply('Erro ao traduzir.'); }
+  }
+
+  if (command === '#signo') {
+    if (args.length === 0) return reply('Use: #signo [DD/MM]\nEx: #signo 15/03');
+    const [d, m] = (args[0] || '').split('/').map(Number);
+    const signos = [
+      { nome: 'Capricornio', de: [1,1], ate: [1,19] },
+      { nome: 'Aquario',    de: [1,20], ate: [2,18] },
+      { nome: 'Peixes',     de: [2,19], ate: [3,20] },
+      { nome: 'Aries',      de: [3,21], ate: [4,19] },
+      { nome: 'Touro',      de: [4,20], ate: [5,20] },
+      { nome: 'Gemeos',     de: [5,21], ate: [6,20] },
+      { nome: 'Cancer',     de: [6,21], ate: [7,22] },
+      { nome: 'Leao',       de: [7,23], ate: [8,22] },
+      { nome: 'Virgem',     de: [8,23], ate: [9,22] },
+      { nome: 'Libra',      de: [9,23], ate: [10,22] },
+      { nome: 'Escorpiao',  de: [10,23], ate: [11,21] },
+      { nome: 'Sagitario',  de: [11,22], ate: [12,21] },
+      { nome: 'Capricornio',de: [12,22], ate: [12,31] },
+    ];
+    const found = signos.find(s => {
+      const [de_m, de_d] = s.de;
+      const [ate_m, ate_d] = s.ate;
+      return (m === de_m && d >= de_d) || (m === ate_m && d <= ate_d);
+    });
+    return reply(found ? `Seu signo: ${found.nome}` : 'Data invalida. Use DD/MM.');
+  }
+
+  if (command === '#clima') {
+    if (args.length === 0) return reply('Use: #clima [cidade]');
+    const cidade = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://wttr.in/${encodeURIComponent(cidade)}?format=3&lang=pt`,
+        { timeout: 8000 }
+      );
+      return reply(`Clima em ${cidade}:\n${data}`);
+    } catch { return reply('Erro ao buscar clima.'); }
+  }
+
+  // ===========================================================
+  // FIGURINHAS
+  // ===========================================================
+
+  if (command === '#sticker' || command === '#fig') {
+    const quoted = getQuoted(message);
+    const targetMsg = quoted?.imageMessage || quoted?.videoMessage
+      || message.message?.imageMessage || message.message?.videoMessage;
+
+    if (!targetMsg) return reply('Marque uma imagem ou video para criar a figurinha!');
+
+    try {
+      const type = targetMsg === message.message?.imageMessage || quoted?.imageMessage ? 'image' : 'video';
+      const buffer = await downloadMedia(targetMsg, type);
+      if (!buffer) return reply('Erro ao baixar midia.');
+      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
+    } catch (err) { return reply('Erro ao criar figurinha: ' + err.message); }
+    return;
+  }
+
+  if (command === '#toimg') {
+    const quoted = getQuoted(message);
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
+    if (!stickerMsg) return reply('Marque uma figurinha para converter em imagem!');
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker');
+      if (!buffer) return reply('Erro ao baixar figurinha.');
+      await sock.sendMessage(groupId, { image: buffer, caption: 'Imagem convertida' }, { quoted: message });
+    } catch (err) { return reply('Erro: ' + err.message); }
+    return;
+  }
+
+  if (command === '#togif') {
+    const quoted = getQuoted(message);
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
+    if (!stickerMsg) return reply('Marque uma figurinha animada para converter em GIF!');
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker');
+      if (!buffer) return reply('Erro ao baixar figurinha.');
+      await sock.sendMessage(groupId, { video: buffer, gifPlayback: true, caption: 'GIF convertido' }, { quoted: message });
+    } catch (err) { return reply('Erro: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ttp') {
+    if (args.length === 0) return reply('Use: #ttp [texto]');
+    const text = args.join(' ');
+    try {
+      const url = `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`;
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
+      const buffer = Buffer.from(resp.data);
+      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
+    } catch { return reply('Erro ao criar figurinha de texto. Tente novamente.'); }
+    return;
+  }
+
+  if (command === '#attp') {
+    if (args.length === 0) return reply('Use: #attp [texto]');
+    const text = args.join(' ');
+    try {
+      const url = `https://api.xteam.xyz/attp?text=${encodeURIComponent(text)}`;
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
+      const buffer = Buffer.from(resp.data);
+      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
+    } catch { return reply('Erro ao criar figurinha animada.'); }
+    return;
+  }
+
+  // ===========================================================
+  // DOWNLOADS
+  // ===========================================================
+
+  if (command === '#play' || command === '#ytmp3') {
+    if (args.length === 0) return reply('Use: #play [nome ou URL da musica]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
+
+      // Usar API externa pois ytdl-core pode falhar em VPS
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de audio.');
+
+      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(audioResp.data);
+
       await sock.sendMessage(groupId, {
-        audio: { stream: download.stream },
+        audio: buffer,
         mimetype: 'audio/mpeg',
         ptt: false,
       }, { quoted: message });
-    } catch (err) {
-      return reply('❌ Erro ao processar áudio: ' + err.message);
-    }
-  }
-  
-  if (command === '#playvideo') {
-    // Verifica assinatura novamente para comandos específicos
-    if (isGroup && !isOwner(sender)) {
-      const sub = checkSubscription(groupId);
-      if (!sub.active) {
-        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
-      }
-    }
-    
-    if (args.length === 0) {
-      return reply('❌ Use: #playvideo [nome do vídeo]');
-    }
-    
-    const query = args.join(' ');
-    const video = await searchYoutube(query);
-    
-    if (!video) {
-      return reply('❌ Nenhum resultado encontrado.');
-    }
-    
-    await reply(`🎬 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n\n⏳ Baixando vídeo...`);
-    
-    try {
-      const download = await downloadYoutube(video.url, 'video');
-      if (!download) {
-        return reply('❌ Erro ao baixar vídeo.');
-      }
-      
+
       await sock.sendMessage(groupId, {
-        video: { stream: download.stream },
-        caption: `🎬 *${download.title}*`,
-      }, { quoted: message });
-    } catch (err) {
-      return reply('❌ Erro ao processar vídeo: ' + err.message);
-    }
-  }
-  
-  // ================================
-  // COMANDOS - ADMINISTRAÇÃO
-  // ================================
-  
-  if (command === '#ban') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-    if (!mentioned || mentioned.length === 0) {
-      return reply('❌ Marque um usuário para banir!');
-    }
-    
-    const userId = mentioned[0];
-    
-    try {
-      await sock.groupParticipantsUpdate(groupId, [userId], 'remove');
-      return reply(`✅ Usuário banido com sucesso!`);
-    } catch (err) {
-      return reply('❌ Erro ao banir usuário: ' + err.message);
-    }
-  }
-  
-  if (command === '#promover') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-    if (!mentioned || mentioned.length === 0) {
-      return reply('❌ Marque um usuário para promover!');
-    }
-    
-    const userId = mentioned[0];
-    
-    try {
-      await sock.groupParticipantsUpdate(groupId, [userId], 'promote');
-      return reply(`✅ Usuário promovido a admin!`);
-    } catch (err) {
-      return reply('❌ Erro ao promover usuário: ' + err.message);
-    }
-  }
-  
-  if (command === '#rebaixar') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-    if (!mentioned || mentioned.length === 0) {
-      return reply('❌ Marque um usuário para rebaixar!');
-    }
-    
-    const userId = mentioned[0];
-    
-    try {
-      await sock.groupParticipantsUpdate(groupId, [userId], 'demote');
-      return reply(`✅ Usuário rebaixado!`);
-    } catch (err) {
-      return reply('❌ Erro ao rebaixar usuário: ' + err.message);
-    }
-  }
-  
-  if (command === '#grupo') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    if (args.length === 0) {
-      return reply('Use: #grupo [abrir|fechar]');
-    }
-    
-    const action = args[0].toLowerCase();
-    
-    try {
-      if (action === 'fechar') {
-        await sock.groupSettingUpdate(groupId, 'announcement');
-        return reply('🔒 Grupo fechado! Apenas admins podem enviar mensagens.');
-      } else if (action === 'abrir') {
-        await sock.groupSettingUpdate(groupId, 'not_announcement');
-        return reply('🔓 Grupo aberto! Todos podem enviar mensagens.');
-      } else {
-        return reply('Use: #grupo [abrir|fechar]');
-      }
-    } catch (err) {
-      return reply('❌ Erro: ' + err.message);
-    }
-  }
-  
-  if (command === '#linkgp') {
-    try {
-      const inviteCode = await sock.groupInviteCode(groupId);
-      return reply(`🔗 Link do grupo:\nhttps://chat.whatsapp.com/${inviteCode}`);
-    } catch (err) {
-      return reply('❌ Erro ao obter link: ' + err.message);
-    }
-  }
-  
-  if (command === '#marcar') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    try {
-      const groupMetadata = await sock.groupMetadata(groupId);
-      const participants = groupMetadata.participants.map((p) => p.id);
-      const text = args.join(' ') || 'Marcação geral!';
-      
-      await sock.sendMessage(groupId, {
-        text: `📢 *Marcação Geral*\n\n${text}`,
-        mentions: participants,
+        image: { url: video.thumbnail },
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}\nViews: ${video.views}`,
       });
-    } catch (err) {
-      return reply('❌ Erro: ' + err.message);
-    }
+    } catch (err) { return reply('Erro ao baixar audio: ' + err.message); }
+    return;
   }
-  
-  if (command === '#advertir') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-    if (!mentioned || mentioned.length === 0) {
-      return reply('❌ Marque um usuário para advertir!');
-    }
-    
+
+  if (command === '#playvideo' || command === '#ytmp4') {
+    if (args.length === 0) return reply('Use: #playvideo [nome ou URL]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      if (video.seconds > 600) return reply('Video muito longo (max 10 minutos).');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
+
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de video.');
+
+      const videoResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 120000 });
+      const buffer = Buffer.from(videoResp.data);
+
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}`,
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar video: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ytsearch') {
+    if (args.length === 0) return reply('Use: #ytsearch [busca]');
+    try {
+      const results = await yts(args.join(' '));
+      const videos = results.videos.slice(0, 5);
+      if (!videos.length) return reply('Nenhum resultado.');
+      let text = '*Resultados no YouTube:*\n\n';
+      videos.forEach((v, i) => {
+        text += `${i + 1}. *${v.title}*\nDuracao: ${v.timestamp}\nURL: ${v.url}\n\n`;
+      });
+      return reply(text);
+    } catch { return reply('Erro na busca.'); }
+  }
+
+  if (command === '#tiktok') {
+    if (args.length === 0) return reply('Use: #tiktok [URL do video]');
+    const url = args[0];
+    await reply('Baixando TikTok...');
+    try {
+      const { data } = await axios.get(
+        `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.video?.noWatermark) return reply('Erro ao obter link do video.');
+      const videoResp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(videoResp.data);
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: data.author?.nickname ? `@${data.author.nickname}` : '',
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar TikTok: ' + err.message); }
+    return;
+  }
+
+  if (command === '#instagram' || command === '#insta') {
+    if (args.length === 0) return reply('Use: #instagram [URL]');
+    const url = args[0];
+    await reply('Baixando Instagram...');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.url) return reply('Erro ao baixar. Verifique se o link e valido e o perfil e publico.');
+      const mediaResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(mediaResp.data);
+      const isVideo = data.type === 'video';
+      if (isVideo) {
+        await sock.sendMessage(groupId, { video: buffer, caption: 'Instagram' }, { quoted: message });
+      } else {
+        await sock.sendMessage(groupId, { image: buffer, caption: 'Instagram' }, { quoted: message });
+      }
+    } catch (err) { return reply('Erro ao baixar Instagram: ' + err.message); }
+    return;
+  }
+
+  if (command === '#pinterest') {
+    if (args.length === 0) return reply('Use: #pinterest [busca]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/pinterest?search=${encodeURIComponent(query)}`,
+        { timeout: 15000 }
+      );
+      if (!data?.result?.length) return reply('Nenhuma imagem encontrada.');
+      const img = data.result[Math.floor(Math.random() * Math.min(data.result.length, 5))];
+      await sock.sendMessage(groupId, { image: { url: img }, caption: `Pinterest: ${query}` }, { quoted: message });
+    } catch { return reply('Erro ao buscar no Pinterest.'); }
+    return;
+  }
+
+  if (command === '#letra') {
+    if (args.length === 0) return reply('Use: #letra [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.vagalume.com.br/search.php?q=${encodeURIComponent(query)}&apikey=09f9e8f8`,
+        { timeout: 10000 }
+      );
+      if (data.type === 'notfound') return reply('Letra nao encontrada.');
+      const music = data.response?.docs?.[0];
+      if (!music) return reply('Letra nao encontrada.');
+      const letra = music.text.substring(0, 1500);
+      return reply(`*${music.band.name} - ${music.name}*\n\n${letra}${music.text.length > 1500 ? '\n\n[Continua...]' : ''}`);
+    } catch { return reply('Erro ao buscar letra.'); }
+  }
+
+  if (command === '#spotify') {
+    if (args.length === 0) return reply('Use: #spotify [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=1`,
+        { timeout: 10000 }
+      );
+      const song = data?.data?.results?.[0];
+      if (!song) return reply('Musica nao encontrada.');
+      return reply(`*${song.name}*\nArtista: ${song.artists?.primary?.map(a => a.name).join(', ') || '-'}\nAlbum: ${song.album?.name || '-'}\nDuracao: ${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, '0')}`);
+    } catch { return reply('Erro ao buscar no Spotify.'); }
+  }
+
+  if (command === '#autobaixar') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.autoBaixar = true; saveSettings(); return reply('Auto-baixar ativado! Links de YouTube, TikTok e Instagram serao baixados automaticamente.'); }
+    if (args[0] === 'off') { settings.autoBaixar = false; saveSettings(); return reply('Auto-baixar desativado.'); }
+    return reply(`Auto-baixar: ${settings.autoBaixar ? 'Ativado' : 'Desativado'}\nUse: #autobaixar [on/off]`);
+  }
+
+  // ===========================================================
+  // ADMINISTRACAO
+  // ===========================================================
+
+  if (command === '#ban') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario para banir!');
+    try {
+      await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'remove');
+      return reply(`Usuario banido com sucesso!`);
+    } catch (err) { return reply('Erro ao banir: ' + err.message); }
+  }
+
+  if (command === '#add') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #add [numero com DDI]\nEx: #add 5592999999999');
+    const num = args[0].replace(/\D/g, '') + '@s.whatsapp.net';
+    try {
+      await sock.groupParticipantsUpdate(groupId, [num], 'add');
+      return reply('Membro adicionado!');
+    } catch (err) { return reply('Erro ao adicionar: ' + err.message); }
+  }
+
+  if (command === '#promover') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    try {
+      await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'promote');
+      return reply('Usuario promovido a admin!');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#rebaixar') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    try {
+      await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'demote');
+      return reply('Admin rebaixado!');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#cargo') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length || !args[1]) return reply('Use: #cargo @usuario [admin|mod|aux|remover]');
     const userId = mentioned[0];
-    
+    const novoCargo = args[1].toLowerCase();
+    if (!['admin', 'mod', 'aux', 'remover'].includes(novoCargo)) return reply('Cargos validos: admin, mod, aux, remover');
+    if (!cargos[groupId]) cargos[groupId] = {};
+    if (novoCargo === 'remover') { delete cargos[groupId][userId]; }
+    else { cargos[groupId][userId] = novoCargo; }
+    saveDB('cargos', cargos);
+    return reply(novoCargo === 'remover' ? 'Cargo removido!' : `Cargo "${novoCargo}" atribuido com sucesso!`);
+  }
+
+  if (command === '#advertir') {
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario para advertir!');
+    const userId = mentioned[0];
+    const motivo = args.slice(1).join(' ') || 'Sem motivo';
     if (!warnings[groupId]) warnings[groupId] = {};
     if (!warnings[groupId][userId]) warnings[groupId][userId] = [];
-    
-    warnings[groupId][userId].push({
-      date: Date.now(),
-      reason: args.join(' ') || 'Sem motivo especificado',
-    });
-    
+    warnings[groupId][userId].push({ date: Date.now(), motivo });
     saveDB('warnings', warnings);
-    
     const count = warnings[groupId][userId].length;
-    
-    if (count >= 3) {
+    const limit = settings.warningLimit || 3;
+    if (count >= limit) {
       try {
+        // Adicionar na lista negra automaticamente
+        if (!blacklist[userId]) blacklist[userId] = { date: Date.now(), reason: 'Atingiu limite de advertencias' };
+        saveDB('blacklist', blacklist);
         await sock.groupParticipantsUpdate(groupId, [userId], 'remove');
         delete warnings[groupId][userId];
         saveDB('warnings', warnings);
-        return reply(`🚫 Usuário banido por atingir 3 advertências!`);
-      } catch (err) {
-        return reply('❌ Erro ao banir: ' + err.message);
-      }
+        return sock.sendMessage(groupId, {
+          text: `Usuario banido por atingir ${limit} advertencias!\nMotivo: ${motivo}`,
+          mentions: [userId],
+        });
+      } catch (err) { return reply('Erro ao banir apos advertencias: ' + err.message); }
     }
-    
-    return reply(`⚠️ Usuário advertido!\nAdvertências: ${count}/3`);
-  }
-  
-  if (command === '#checkwarnings') {
-    const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-    const userId = mentioned && mentioned.length > 0 ? mentioned[0] : sender;
-    
-    if (!warnings[groupId] || !warnings[groupId][userId]) {
-      return reply('✅ Este usuário não possui advertências.');
-    }
-    
-    const userWarnings = warnings[groupId][userId];
-    let text = `⚠️ *Advertências:* ${userWarnings.length}/3\n\n`;
-    
-    userWarnings.forEach((w, i) => {
-      text += `${i + 1}. ${new Date(w.date).toLocaleString('pt-BR')}\nMotivo: ${w.reason}\n\n`;
-    });
-    
-    return reply(text);
-  }
-  
-  if (command === '#bemvindo') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    if (args.length === 0) {
-      return reply('Use: #bemvindo [on|off]');
-    }
-    
-    const action = args[0].toLowerCase();
-    settings.welcome = action === 'on';
-    saveDB('groupSettings', groupSettings);
-    
-    return reply(settings.welcome ? '✅ Boas-vindas ativadas!' : '❌ Boas-vindas desativadas!');
-  }
-  
-  if (command === '#antilink') {
-    if (!adminCheck && !isOwner(sender)) {
-      return reply('❌ Apenas admins podem usar este comando.');
-    }
-    
-    if (args.length === 0) {
-      return reply('Use: #antilink [on|off]');
-    }
-    
-    const action = args[0].toLowerCase();
-    settings.antilink = action === 'on';
-    saveDB('groupSettings', groupSettings);
-    
-    return reply(settings.antilink ? '✅ Antilink ativado!' : '❌ Antilink desativado!');
-  }
-  
-  // ================================
-  // COMANDOS - GRUPO
-  // ================================
-  
-  if (command === '#rankativos') {
-    if (!userActivity[groupId]) {
-      return reply('❌ Nenhuma atividade registrada ainda.');
-    }
-    
-    const sorted = Object.entries(userActivity[groupId])
-      .sort((a, b) => b[1].messageCount - a[1].messageCount)
-      .slice(0, 10);
-    
-    let text = '📊 *Top 10 Membros Ativos*\n\n';
-    
-    for (let i = 0; i < sorted.length; i++) {
-      const [userId, data] = sorted[i];
-      const number = userId.split('@')[0];
-      text += `${i + 1}. @${number}\nMensagens: ${data.messageCount}\n\n`;
-    }
-    
     return sock.sendMessage(groupId, {
-      text,
-      mentions: sorted.map(([userId]) => userId),
+      text: `Advertencia ${count}/${limit} aplicada!\nMotivo: ${motivo}`,
+      mentions: [userId],
     });
   }
-  
-  if (command === '#gpinfo') {
-    try {
-      const groupMetadata = await sock.groupMetadata(groupId);
-      
-      const text = `
-📋 *Informações do Grupo*
 
-Nome: ${groupMetadata.subject}
-Descrição: ${groupMetadata.desc || 'Sem descrição'}
-Criado em: ${new Date(groupMetadata.creation * 1000).toLocaleString('pt-BR')}
-Participantes: ${groupMetadata.participants.length}
-Admins: ${groupMetadata.participants.filter((p) => p.admin).length}
-      `.trim();
-      
-      return reply(text);
-    } catch (err) {
-      return reply('❌ Erro ao obter informações: ' + err.message);
-    }
-  }
-  
-  // ================================
-  // COMANDOS - INFORMAÇÕES
-  // ================================
-  
-  if (command === '#info') {
-    const uptime = process.uptime();
-    const hours = Math.floor(uptime / 3600);
-    const minutes = Math.floor((uptime % 3600) / 60);
-    
-    const text = `
-ℹ️ *${BOT_NAME} - Informações*
-
-📌 Versão: 1.0.0
-⏰ Tempo online: ${hours}h ${minutes}m
-📱 Plataforma: WhatsApp
-💻 Node.js: ${process.version}
-👤 Dono: wa.me/${OWNER_NUMBER}
-
-🔧 Bot desenvolvido para WhatsApp
-    `.trim();
-    
+  if (command === '#checkwarnings' || command === '#ver_adv') {
+    const mentioned = getMentioned(message);
+    const userId = mentioned.length ? mentioned[0] : sender;
+    const userWarns = warnings[groupId]?.[userId];
+    if (!userWarns || !userWarns.length) return reply('Sem advertencias.');
+    const limit = settings.warningLimit || 3;
+    let text = `Advertencias: ${userWarns.length}/${limit}\n\n`;
+    userWarns.forEach((w, i) => {
+      text += `${i + 1}. ${new Date(w.date).toLocaleString('pt-BR')}\nMotivo: ${w.motivo}\n\n`;
+    });
     return reply(text);
   }
-  
-  if (command === '#dono') {
-    return reply(`👤 Dono do bot:\nwa.me/${OWNER_NUMBER}`);
+
+  if (command === '#removewarnings' || command === '#rm_adv') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    const userId = mentioned[0];
+    if (warnings[groupId]) delete warnings[groupId][userId];
+    saveDB('warnings', warnings);
+    return reply('Advertencias removidas!');
   }
-  
-  if (command === '#ping') {
-    const start = Date.now();
-    await reply('🏓 Pong!');
-    const latency = Date.now() - start;
-    return reply(`⚡ Velocidade: ${latency}ms`);
+
+  if (command === '#setlimitec') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    const num = parseInt(args[0]);
+    if (isNaN(num) || num < 1) return reply('Use: #setlimitec [numero]\nEx: #setlimitec 3');
+    settings.warningLimit = num;
+    saveSettings();
+    return reply(`Limite de advertencias definido para ${num}.`);
   }
-  
-  // Comando não encontrado
-  if (command.startsWith('#') || command.startsWith('!')) {
-    return reply('❌ Comando não encontrado. Use #menu para ver os comandos disponíveis.');
+
+  if (command === '#advertidos') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const grpWarns = warnings[groupId];
+    if (!grpWarns || !Object.keys(grpWarns).length) return reply('Nenhum usuario advertido.');
+    let text = 'Usuarios com advertencias:\n\n';
+    const mentions = [];
+    Object.entries(grpWarns).forEach(([uid, warns]) => {
+      if (warns.length > 0) { text += `@${uid.split('@')[0]}: ${warns.length} adv.\n`; mentions.push(uid); }
+    });
+    return sock.sendMessage(groupId, { text, mentions });
+  }
+
+  if (command === '#marcar' || command === '#tagall' || command === '#totag') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const participants = meta.participants.map(p => p.id);
+      const text = args.join(' ') || 'Marcacao geral!';
+      await sock.sendMessage(groupId, { text: `*Marcacao Geral*\n\n${text}`, mentions: participants });
+    } catch (err) { return reply('Erro: ' + err.message); }
+    return;
+  }
+
+  if (command === '#deletar' || command === '#del') {
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
+    const quoted = getQuoted(message);
+    if (!quoted) return reply('Marque a mensagem para deletar!');
+    const quotedKey = message.message?.extendedTextMessage?.contextInfo;
+    if (!quotedKey) return reply('Nao foi possivel identificar a mensagem.');
+    try {
+      await sock.sendMessage(groupId, { delete: {
+        remoteJid: groupId,
+        fromMe: false,
+        id: quotedKey.stanzaId,
+        participant: quotedKey.participant,
+      }});
+    } catch { return reply('Nao consegui apagar a mensagem (preciso ser admin).'); }
+    return;
+  }
+
+  if (command === '#fechargp' || command === '#colloportus') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    try {
+      await sock.groupSettingUpdate(groupId, 'announcement');
+      return reply('Grupo fechado! Apenas admins podem enviar mensagens.');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#abrirgp' || command === '#alohomora') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    try {
+      await sock.groupSettingUpdate(groupId, 'not_announcement');
+      return reply('Grupo aberto! Todos podem enviar mensagens.');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#linkgp') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    try {
+      const code = await sock.groupInviteCode(groupId);
+      return reply(`Link do grupo:\nhttps://chat.whatsapp.com/${code}`);
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#nomegp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #nomegp [novo nome]');
+    try {
+      await sock.groupUpdateSubject(groupId, args.join(' '));
+      return reply('Nome do grupo alterado!');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#descgp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #descgp [nova descricao]');
+    try {
+      await sock.groupUpdateDescription(groupId, args.join(' '));
+      return reply('Descricao do grupo alterada!');
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#regras') {
+    if (!args.length) {
+      const r = rules[groupId];
+      return reply(r ? `*Regras do grupo:*\n\n${r}` : 'Nenhuma regra definida.');
+    }
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    rules[groupId] = args.join(' ');
+    saveDB('rules', rules);
+    return reply('Regras definidas!');
+  }
+
+  if (command === '#gpinfo' || command === '#grupoinfo') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const admins = meta.participants.filter(p => p.admin).length;
+      return reply(`*Informacoes do Grupo*\n\nNome: ${meta.subject}\nDescricao: ${meta.desc || '-'}\nCriado: ${new Date(meta.creation * 1000).toLocaleString('pt-BR')}\nMembros: ${meta.participants.length}\nAdmins: ${admins}`);
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  if (command === '#admins') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const admins = meta.participants.filter(p => p.admin);
+      let text = '*Admins do grupo:*\n\n';
+      admins.forEach(a => { text += `@${a.id.split('@')[0]}\n`; });
+      return sock.sendMessage(groupId, { text, mentions: admins.map(a => a.id) });
+    } catch { return reply('Erro ao buscar admins.'); }
+  }
+
+  if (command === '#so_adm') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.soAdm = true; saveSettings(); return reply('Modo so-admins ativado!'); }
+    if (args[0] === 'off') { settings.soAdm = false; saveSettings(); return reply('Modo so-admins desativado.'); }
+    return reply(`Modo so-admins: ${settings.soAdm ? 'Ativado' : 'Desativado'}\nUse: #so_adm [on/off]`);
+  }
+
+  if (command === '#bemvindo') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('Boas-vindas ativadas!'); }
+    if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('Boas-vindas desativadas.'); }
+    return reply(`Boas-vindas: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
+  }
+
+  if (command === '#antilink') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antilink = true; saveSettings(); return reply('Antilink ativado! Apenas Instagram, YouTube e TikTok permitidos.'); }
+    if (args[0] === 'off') { settings.antilink = false; saveSettings(); return reply('Antilink desativado.'); }
+    return reply(`Antilink: ${settings.antilink ? 'Ativado' : 'Desativado'}\nUse: #antilink [on/off]`);
+  }
+
+  if (command === '#antipalavra') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiPalavra = true; saveSettings(); return reply('Filtro de palavroes ativado!'); }
+    if (args[0] === 'off') { settings.antiPalavra = false; saveSettings(); return reply('Filtro de palavroes desativado.'); }
+    return reply(`Filtro de palavroes: ${settings.antiPalavra ? 'Ativado' : 'Desativado'}\nUse: #antipalavra [on/off]`);
+  }
+
+  if (command === '#addpalavra') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #addpalavra [palavra]');
+    const word = args[0].toLowerCase();
+    if (!settings.palavroes) settings.palavroes = [];
+    if (!settings.palavroes.includes(word)) { settings.palavroes.push(word); saveSettings(); return reply(`Palavra "${word}" adicionada ao filtro.`); }
+    return reply('Palavra ja esta no filtro.');
+  }
+
+  if (command === '#delpalavra') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #delpalavra [palavra]');
+    const word = args[0].toLowerCase();
+    settings.palavroes = (settings.palavroes || []).filter(p => p !== word);
+    saveSettings();
+    return reply(`Palavra "${word}" removida do filtro.`);
+  }
+
+  if (command === '#listapalavrao') {
+    if (!settings.palavroes || !settings.palavroes.length) return reply('Nenhum palavrao no filtro.');
+    return reply(`Palavroes no filtro:\n\n${settings.palavroes.join(', ')}`);
+  }
+
+  if (command === '#anticall') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.anticall = true; saveSettings(); return reply('Anti-chamada ativado!'); }
+    if (args[0] === 'off') { settings.anticall = false; saveSettings(); return reply('Anti-chamada desativado.'); }
+    return reply(`Anti-chamada: ${settings.anticall ? 'Ativado' : 'Desativado'}\nUse: #anticall [on/off]`);
+  }
+
+  if (command === '#x9visuunica') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiViewOnce = true; saveSettings(); return reply('Revelador de view-once ativado!'); }
+    if (args[0] === 'off') { settings.antiViewOnce = false; saveSettings(); return reply('Revelador de view-once desativado.'); }
+    return reply(`View-once revelar: ${settings.antiViewOnce ? 'Ativado' : 'Desativado'}\nUse: #x9visuunica [on/off]`);
+  }
+
+  if (command === '#mute') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    const userId = mentioned[0];
+    if (!muted[groupId]) muted[groupId] = [];
+    if (!muted[groupId].includes(userId)) { muted[groupId].push(userId); saveDB('muted', muted); }
+    return sock.sendMessage(groupId, { text: `Usuario mutado! Mensagens dele serao apagadas.`, mentions: [userId] });
+  }
+
+  if (command === '#desmute') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    const userId = mentioned[0];
+    if (muted[groupId]) { muted[groupId] = muted[groupId].filter(u => u !== userId); saveDB('muted', muted); }
+    return sock.sendMessage(groupId, { text: `Usuario desmutado!`, mentions: [userId] });
+  }
+
+  // LISTA NEGRA
+  if (command === '#listanegra') {
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'add') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+      const num = args[1]?.replace(/\D/g, '');
+      if (!num) return reply('Use: #listanegra add [numero]');
+      blacklist[num + '@s.whatsapp.net'] = { date: Date.now(), reason: args.slice(2).join(' ') || 'Banido' };
+      saveDB('blacklist', blacklist);
+      return reply(`Numero ${num} adicionado a lista negra.`);
+    }
+    if (sub === 'rem') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+      const num = args[1]?.replace(/\D/g, '');
+      if (!num) return reply('Use: #listanegra rem [numero]');
+      delete blacklist[num + '@s.whatsapp.net'];
+      saveDB('blacklist', blacklist);
+      return reply(`Numero ${num} removido da lista negra.`);
+    }
+    if (sub === 'ver') {
+      const entries = Object.entries(blacklist);
+      if (!entries.length) return reply('Lista negra vazia.');
+      let text = '*Lista Negra:*\n\n';
+      entries.slice(0, 30).forEach(([jid, info]) => {
+        text += `+${jid.split('@')[0]} — ${info.reason}\n`;
+      });
+      return reply(text);
+    }
+    return reply('Use: #listanegra [add|rem|ver] [numero]');
+  }
+
+  // ANOTACOES
+  if (command === '#anotar') {
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #anotar [texto]');
+    if (!notes[groupId]) notes[groupId] = [];
+    notes[groupId].push({ text: args.join(' '), date: Date.now(), by: sender });
+    saveDB('notes', notes);
+    return reply(`Nota ${notes[groupId].length} salva!`);
+  }
+
+  if (command === '#anotacao' || command === '#anotacoes') {
+    const grpNotes = notes[groupId];
+    if (!grpNotes || !grpNotes.length) return reply('Nenhuma anotacao salva.');
+    let text = '*Anotacoes:*\n\n';
+    grpNotes.forEach((n, i) => { text += `${i + 1}. ${n.text}\n   (${new Date(n.date).toLocaleString('pt-BR')})\n\n`; });
+    return reply(text);
+  }
+
+  if (command === '#tirar_nota' || command === '#rmnota') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const idx = parseInt(args[0]) - 1;
+    if (!notes[groupId] || isNaN(idx) || !notes[groupId][idx]) return reply('Numero de nota invalido.');
+    notes[groupId].splice(idx, 1);
+    saveDB('notes', notes);
+    return reply('Nota removida!');
+  }
+
+  // SORTEIO
+  if (command === '#sorteio') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const members = meta.participants.filter(p => p.id !== (await sock.user?.id));
+      if (!members.length) return reply('Nenhum membro para sortear.');
+      const winner = members[Math.floor(Math.random() * members.length)];
+      return sock.sendMessage(groupId, {
+        text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
+        mentions: [winner.id],
+      });
+    } catch { return reply('Erro ao realizar sorteio.'); }
+  }
+
+  // MENSAGENS AGENDADAS
+  if (command === '#mensagem-automatica') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args.length < 2) return reply('Use: #mensagem-automatica [HH:MM] [texto]\nEx: #mensagem-automatica 08:00 Bom dia!');
+    const time = args[0];
+    const text = args.slice(1).join(' ');
+    if (!/^\d{2}:\d{2}$/.test(time)) return reply('Formato de hora invalido. Use HH:MM\nEx: 08:00');
+    if (!autoMessages[groupId]) autoMessages[groupId] = [];
+    autoMessages[groupId].push({ time, text, id: Date.now() });
+    saveDB('autoMessages', autoMessages);
+    return reply(`Mensagem automatica agendada para ${time}:\n"${text}"`);
+  }
+
+  if (command === '#listar-mensagens-automaticas') {
+    const msgs = autoMessages[groupId];
+    if (!msgs || !msgs.length) return reply('Nenhuma mensagem automatica agendada.');
+    let text = '*Mensagens Automaticas:*\n\n';
+    msgs.forEach((m, i) => { text += `${i + 1}. [${m.time}] ${m.text}\n`; });
+    return reply(text);
+  }
+
+  if (command === '#limpar-mensagens-automaticas') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    autoMessages[groupId] = [];
+    saveDB('autoMessages', autoMessages);
+    return reply('Mensagens automaticas removidas!');
+  }
+
+  // HORARIO ABERTURA/FECHAMENTO
+  if (command === '#opengp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #opengp [HH:MM]\nEx: #opengp 08:00');
+    settings.openAt = args[0];
+    saveSettings();
+    return reply(`Grupo vai abrir automaticamente as ${args[0]}`);
+  }
+
+  if (command === '#closegp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #closegp [HH:MM]\nEx: #closegp 22:00');
+    settings.closeAt = args[0];
+    saveSettings();
+    return reply(`Grupo vai fechar automaticamente as ${args[0]}`);
+  }
+
+  if (command === '#rm_opengp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    settings.openAt = null;
+    settings.closeAt = null;
+    saveSettings();
+    return reply('Horarios de abertura/fechamento removidos.');
+  }
+
+  // AFK - AUSENTE
+  if (command === '#ausente') {
+    const msg = args.join(' ') || 'Estou ausente no momento.';
+    afkList[sender] = { msg, time: Date.now(), groupId };
+    saveDB('afkList', afkList);
+    return sock.sendMessage(groupId, { text: `@${sender.split('@')[0]} entrou no modo ausente.\nMensagem: ${msg}`, mentions: [sender] });
+  }
+
+  if (command === '#ativo') {
+    if (afkList[sender]) {
+      const afk = afkList[sender];
+      const duration = formatTime(Date.now() - afk.time);
+      delete afkList[sender];
+      saveDB('afkList', afkList);
+      return sock.sendMessage(groupId, { text: `@${sender.split('@')[0]} voltou!\nFicou ausente por: ${duration}`, mentions: [sender] });
+    }
+    return reply('Voce nao esta ausente.');
+  }
+
+  if (command === '#listarafk') {
+    const entries = Object.entries(afkList).filter(([, v]) => v.groupId === groupId);
+    if (!entries.length) return reply('Nenhum membro ausente.');
+    let text = '*Membros Ausentes:*\n\n';
+    entries.forEach(([uid, info]) => {
+      text += `@${uid.split('@')[0]} — ${info.msg} (${formatTime(Date.now() - info.time)} ausente)\n`;
+    });
+    return sock.sendMessage(groupId, { text, mentions: entries.map(([uid]) => uid) });
+  }
+
+  // BANGHOST / INATIVOS
+  if (command === '#banghost' || command === '#inativos') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const days = parseInt(args[0]) || 30;
+    const limit = Date.now() - days * 86400000;
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const activity = userActivity[groupId] || {};
+      const inactive = meta.participants.filter(p => {
+        if (p.admin) return false;
+        const act = activity[p.id];
+        return !act || act.lastActive < limit;
+      });
+      if (!inactive.length) return reply(`Nenhum membro inativo ha mais de ${days} dias!`);
+      let text = `*Membros inativos ha +${days} dias:* ${inactive.length}\n\n`;
+      inactive.slice(0, 20).forEach(p => { text += `@${p.id.split('@')[0]}\n`; });
+      if (inactive.length > 20) text += `\n...e mais ${inactive.length - 20} membros.`;
+
+      if (command === '#banghost') {
+        await sock.groupParticipantsUpdate(groupId, inactive.map(p => p.id), 'remove');
+        return reply(`${inactive.length} membros fantasmas removidos!`);
+      }
+      return sock.sendMessage(groupId, { text, mentions: inactive.slice(0, 20).map(p => p.id) });
+    } catch (err) { return reply('Erro: ' + err.message); }
+  }
+
+  // ===========================================================
+  // RANKING / ATIVIDADE
+  // ===========================================================
+
+  if (command === '#rankativos') {
+    const activity = userActivity[groupId];
+    if (!activity || !Object.keys(activity).length) return reply('Nenhuma atividade registrada ainda.');
+    const sorted = Object.entries(activity).sort((a, b) => b[1].messageCount - a[1].messageCount).slice(0, 10);
+    let text = '*Top 10 Membros Mais Ativos:*\n\n';
+    const medals = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    sorted.forEach(([uid, data], i) => {
+      text += `${medals[i]}. @${uid.split('@')[0]} — ${data.messageCount} msgs\n`;
+    });
+    return sock.sendMessage(groupId, { text, mentions: sorted.map(([uid]) => uid) });
+  }
+
+  if (command === '#rankativosg') {
+    const activity = userActivity[groupId];
+    if (!activity) return reply('Nenhuma atividade registrada.');
+    const today = new Date().setHours(0, 0, 0, 0);
+    const todayEntries = Object.entries(activity)
+      .filter(([, d]) => d.lastActive >= today)
+      .sort((a, b) => b[1].messageCount - a[1].messageCount)
+      .slice(0, 5);
+    if (!todayEntries.length) return reply('Nenhuma atividade hoje.');
+    let text = '*Top 5 Ativos Hoje:*\n\n';
+    todayEntries.forEach(([uid, data], i) => { text += `${i + 1}. @${uid.split('@')[0]} — ${data.messageCount} msgs\n`; });
+    return sock.sendMessage(groupId, { text, mentions: todayEntries.map(([uid]) => uid) });
+  }
+
+  // ===========================================================
+  // BRINCADEIRAS
+  // ===========================================================
+
+  if (command === '#ppt') {
+    const opcoes = ['Pedra', 'Papel', 'Tesoura'];
+    const bot = opcoes[Math.floor(Math.random() * 3)];
+    const user = args[0];
+    if (!user) return reply(`Escolha: #ppt [pedra|papel|tesoura]\nBotei: *${bot}*`);
+    const u = user.toLowerCase();
+    if (!['pedra', 'papel', 'tesoura'].includes(u)) return reply('Escolha entre: pedra, papel ou tesoura');
+    let result = '';
+    if (u === bot.toLowerCase()) result = 'Empate!';
+    else if ((u === 'pedra' && bot === 'Tesoura') || (u === 'papel' && bot === 'Pedra') || (u === 'tesoura' && bot === 'Papel')) result = 'Voce ganhou!';
+    else result = 'Eu ganhei!';
+    return reply(`Voce: ${user}\nBot: ${bot}\n\n${result}`);
+  }
+
+  if (command === '#dado') {
+    const lados = parseInt(args[0]) || 6;
+    const result = Math.floor(Math.random() * lados) + 1;
+    return reply(`Dado de ${lados} lados: *${result}*`);
+  }
+
+  if (command === '#porcentagem' || command === '#chance') {
+    const text = args.join(' ') || senderName;
+    const pct = Math.floor(Math.random() * 101);
+    return reply(`${text}: ${pct}%`);
+  }
+
+  if (command === '#8ball') {
+    const respostas = ['Sim!', 'Nao.', 'Talvez...', 'Com certeza!', 'Definitivamente nao.', 'Provavelmente sim.', 'As perspectivas nao sao boas.', 'Sinais apontam que sim.', 'Pergunte novamente mais tarde.', 'Nao conte com isso.'];
+    return reply(`Pergunta: ${args.join(' ')}\n\nResposta: ${respostas[Math.floor(Math.random() * respostas.length)]}`);
+  }
+
+  if (command === '#verdadeoudesafio' || command === '#vod') {
+    const verdades = ['Qual e o seu maior medo?', 'Voce ja mentiu para um amigo?', 'Qual e a coisa mais embaracosa que ja fez?', 'Voce tem uma queda por alguem do grupo?'];
+    const desafios = ['Mande uma foto fazendo careta!', 'Escreva um poema em 2 minutos!', 'Fale em voz alta a musica que estava ouvindo agora!', 'Mande uma selfie agora!'];
+    const all = [...verdades.map(t => `Verdade: ${t}`), ...desafios.map(t => `Desafio: ${t}`)];
+    return reply(all[Math.floor(Math.random() * all.length)]);
+  }
+
+  if (command === '#eujaeununca') {
+    const frases = ['Eu ja fui acordado no meio da noite por mensagem no grupo.', 'Eu nunca entendi meme de anime.', 'Eu ja tive mais de 500 mensagens nao lidas.', 'Eu nunca fiz figurinha de foto dos outros.', 'Eu ja enviei mensagem para a pessoa errada.'];
+    return reply(frases[Math.floor(Math.random() * frases.length)]);
+  }
+
+  if (command === '#casal') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const members = meta.participants;
+      if (members.length < 2) return reply('Membros insuficientes.');
+      const shuffled = [...members].sort(() => 0.5 - Math.random());
+      const p1 = shuffled[0];
+      const p2 = shuffled[1];
+      return sock.sendMessage(groupId, {
+        text: `O casal do dia e:\n@${p1.id.split('@')[0]} + @${p2.id.split('@')[0]}`,
+        mentions: [p1.id, p2.id],
+      });
+    } catch { return reply('Erro ao sortear casal.'); }
+  }
+
+  if (command === '#fakemsg') {
+    const mentioned = getMentioned(message);
+    if (!mentioned.length || args.length < 2) return reply('Use: #fakemsg @usuario [texto]');
+    const uid = mentioned[0];
+    const txt = args.slice(1).join(' ');
+    await sock.sendMessage(groupId, { text: `@${uid.split('@')[0]}: "${txt}"`, mentions: [uid] });
+    return;
+  }
+
+  if (command === '#bot') {
+    const respostas = ['Estou aqui, pode falar!', 'Sim, estou acordado!', 'Presente!', 'Online e pronto para servir!', 'Oi, sou o ' + BOT_NAME + '!'];
+    return reply(respostas[Math.floor(Math.random() * respostas.length)]);
+  }
+
+  // RANKS DE BRINCADEIRA
+  const rankCommands = ['#rankgay', '#rankgado', '#rankcorno', '#rankgostoso', '#rankgostosa', '#rankkenga', '#rankhetero', '#ranknazista', '#rankotaku'];
+  if (rankCommands.includes(command)) {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const members = meta.participants;
+      const winner = members[Math.floor(Math.random() * members.length)];
+      const rankName = command.replace('#rank', '').charAt(0).toUpperCase() + command.replace('#rank', '').slice(1);
+      const pct = Math.floor(Math.random() * 100) + 1;
+      return sock.sendMessage(groupId, {
+        text: `*Rank ${rankName} do dia:*\n\n@${winner.id.split('@')[0]} com ${pct}%!`,
+        mentions: [winner.id],
+      });
+    } catch { return reply('Erro ao calcular ranking.'); }
+  }
+
+  // ===========================================================
+  // ANIVERSARIO
+  // ===========================================================
+
+  if (command === '#aniversario') {
+    if (!args[0]) return reply('Use: #aniversario [DD/MM]\nEx: #aniversario 25/12');
+    const [d, m] = (args[0] || '').split('/').map(Number);
+    if (!d || !m || d > 31 || m > 12) return reply('Data invalida. Use DD/MM');
+    if (!birthdays[groupId]) birthdays[groupId] = {};
+    birthdays[groupId][sender] = { day: d, month: m, name: senderName };
+    saveDB('birthdays', birthdays);
+    return reply(`Aniversario cadastrado: ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`);
+  }
+
+  if (command === '#meuaniversario') {
+    const b = birthdays[groupId]?.[sender];
+    if (!b) return reply('Voce nao cadastrou seu aniversario. Use: #aniversario [DD/MM]');
+    return reply(`Seu aniversario: ${String(b.day).padStart(2,'0')}/${String(b.month).padStart(2,'0')}`);
+  }
+
+  // ===========================================================
+  // FEEDBACK
+  // ===========================================================
+
+  if (command === '#feedback') {
+    if (!args.length) return reply('Use: #feedback [seu feedback]');
+    const fb = args.join(' ');
+    await sock.sendMessage(OWNER_JIDS[0], {
+      text: `*Feedback recebido!*\nGrupo: ${groupId}\nMembro: @${sender.split('@')[0]} (${senderName})\n\n${fb}`,
+    });
+    return reply('Feedback enviado ao dono do bot! Obrigado.');
+  }
+
+  // ===========================================================
+  // GOLD (moeda virtual)
+  // ===========================================================
+
+  const goldDB = loadDB('gold');
+
+  const getGold = (uid) => goldDB[uid] || 0;
+  const addGold = (uid, amount) => {
+    goldDB[uid] = (goldDB[uid] || 0) + amount;
+    saveDB('gold', goldDB);
+  };
+  const setGold = (uid, amount) => { goldDB[uid] = amount; saveDB('gold', goldDB); };
+
+  const dailyDB = loadDB('daily');
+
+  if (command === '#gold') {
+    const myGold = getGold(sender);
+    return reply(`Seus Golds: *${myGold}*`);
+  }
+
+  if (command === '#daily') {
+    const lastDaily = dailyDB[sender];
+    const now = Date.now();
+    const oneDayMs = 86400000;
+    if (lastDaily && (now - lastDaily) < oneDayMs) {
+      const next = lastDaily + oneDayMs - now;
+      return reply(`Voce ja coletou sua recompensa diaria!\nProxima em: ${formatTime(next)}`);
+    }
+    const reward = Math.floor(Math.random() * 500) + 100;
+    addGold(sender, reward);
+    dailyDB[sender] = now;
+    saveDB('daily', dailyDB);
+    return reply(`Recompensa diaria coletada!\n+${reward} Golds!\nTotal: ${getGold(sender)} Golds`);
+  }
+
+  if (command === '#rankgold') {
+    const sorted = Object.entries(goldDB).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!sorted.length) return reply('Nenhum gold registrado ainda.');
+    let text = '*Top 10 Ranking de Golds:*\n\n';
+    sorted.forEach(([uid, amount], i) => { text += `${i + 1}. @${uid.split('@')[0]} — ${amount} Golds\n`; });
+    return sock.sendMessage(groupId, { text, mentions: sorted.map(([uid]) => uid) });
+  }
+
+  if (command === '#doargold') {
+    const mentioned = getMentioned(message);
+    const amount = parseInt(args[1]);
+    if (!mentioned.length || isNaN(amount) || amount <= 0) return reply('Use: #doargold @usuario [quantidade]');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    addGold(sender, -amount);
+    addGold(mentioned[0], amount);
+    return sock.sendMessage(groupId, {
+      text: `@${sender.split('@')[0]} doou ${amount} golds para @${mentioned[0].split('@')[0]}!`,
+      mentions: [sender, mentioned[0]],
+    });
+  }
+
+  if (command === '#minerar_gold') {
+    const mineDB = loadDB('mine');
+    const lastMine = mineDB[sender];
+    const cooldown = 3600000; // 1 hora
+    if (lastMine && Date.now() - lastMine < cooldown) {
+      return reply(`Aguarde ${formatTime(cooldown - (Date.now() - lastMine))} para minerar novamente.`);
+    }
+    const amount = Math.floor(Math.random() * 200) + 50;
+    addGold(sender, amount);
+    mineDB[sender] = Date.now();
+    saveDB('mine', mineDB);
+    return reply(`Mineracao concluida!\n+${amount} Golds!\nTotal: ${getGold(sender)} Golds`);
+  }
+
+  if (command === '#apostar' || command === '#cassino') {
+    const amount = parseInt(args[0]);
+    if (isNaN(amount) || amount <= 0) return reply('Use: #apostar [quantidade]\nEx: #apostar 100');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    const win = Math.random() > 0.5;
+    if (win) { addGold(sender, amount); return reply(`Voce ganhou ${amount} golds!\nTotal: ${getGold(sender)} Golds`); }
+    else { addGold(sender, -amount); return reply(`Voce perdeu ${amount} golds!\nTotal: ${getGold(sender)} Golds`); }
+  }
+
+  if (command === '#doublegold') {
+    const amount = parseInt(args[0]);
+    if (isNaN(amount) || amount <= 0) return reply('Use: #doublegold [quantidade]');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    const roll = Math.random();
+    if (roll > 0.6) { addGold(sender, amount * 2); return reply(`Dobrou! +${amount * 2} golds!\nTotal: ${getGold(sender)} Golds`); }
+    else { addGold(sender, -amount); return reply(`Perdeu! -${amount} golds.\nTotal: ${getGold(sender)} Golds`); }
+  }
+
+  if (command === '#roubargold') {
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Use: #roubargold @usuario');
+    const target = mentioned[0];
+    const targetGold = getGold(target);
+    if (targetGold <= 0) return reply('Esse usuario nao tem golds para roubar!');
+    const robDB = loadDB('rob');
+    if (robDB[sender] && Date.now() - robDB[sender] < 3600000) return reply(`Aguarde ${formatTime(3600000 - (Date.now() - robDB[sender]))} para roubar novamente.`);
+    const success = Math.random() > 0.4;
+    robDB[sender] = Date.now();
+    saveDB('rob', robDB);
+    if (success) {
+      const amount = Math.floor(targetGold * (Math.random() * 0.3 + 0.1));
+      addGold(target, -amount);
+      addGold(sender, amount);
+      return sock.sendMessage(groupId, { text: `Roubo bem-sucedido! Voce roubou ${amount} golds de @${target.split('@')[0]}!`, mentions: [sender, target] });
+    } else {
+      const fine = Math.floor(Math.random() * 100) + 50;
+      addGold(sender, -fine);
+      return sock.sendMessage(groupId, { text: `Roubo falhou! Voce perdeu ${fine} golds de multa!`, mentions: [sender] });
+    }
+  }
+
+  // ===========================================================
+  // COMANDO NAO ENCONTRADO (apenas se comecar com # ou /)
+  // ===========================================================
+
+  if (command.startsWith('#') || command.startsWith('/')) {
+    return reply('Comando nao encontrado. Use #menu para ver os comandos disponiveis.');
   }
 };
 
-// ================================
-// CONEXÃO DO BOT
-// ================================
+// ============================================================
+// HANDLER DE EVENTOS DO GRUPO
+// ============================================================
+
+const handleGroupEvents = async (sock, events) => {
+  if (!events['groups.update']) return;
+};
+
+// Checar horarios de abertura/fechamento automatico
+const checkScheduledTimes = async (sock) => {
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  for (const [groupId, settings] of Object.entries(groupSettings)) {
+    // Abrir grupo
+    if (settings.openAt === timeStr) {
+      try {
+        await sock.groupSettingUpdate(groupId, 'not_announcement');
+        await sock.sendMessage(groupId, { text: 'O grupo abriu automaticamente! Bom dia a todos!' });
+      } catch {}
+    }
+    // Fechar grupo
+    if (settings.closeAt === timeStr) {
+      try {
+        await sock.groupSettingUpdate(groupId, 'announcement');
+        await sock.sendMessage(groupId, { text: 'O grupo fechou automaticamente. Ate amanha!' });
+      } catch {}
+    }
+    // Mensagens automaticas
+    const msgs = autoMessages[groupId];
+    if (msgs && msgs.length) {
+      for (const m of msgs) {
+        if (m.time === timeStr) {
+          try { await sock.sendMessage(groupId, { text: m.text }); } catch {}
+        }
+      }
+    }
+  }
+};
+
+// Checar aniversarios do dia
+const checkBirthdays = async (sock) => {
+  const now = new Date();
+  const day = now.getDate();
+  const month = now.getMonth() + 1;
+  const hour = now.getHours();
+  if (hour !== 9) return; // Enviar as 9h
+
+  for (const [groupId, members] of Object.entries(birthdays)) {
+    for (const [userId, b] of Object.entries(members)) {
+      if (b.day === day && b.month === month) {
+        try {
+          await sock.sendMessage(groupId, {
+            text: `Hoje e aniversario de @${userId.split('@')[0]}!\n\nParabens, ${b.name}! Que seu dia seja especial!`,
+            mentions: [userId],
+          });
+        } catch {}
+      }
+    }
+  }
+};
+
+// ============================================================
+// CONECTAR BOT
+// ============================================================
 
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
-// Apaga a pasta de sessão para forçar novo QR Code
 const clearSession = () => {
   try {
     if (fs.existsSync(AUTH_DIR)) {
       fs.rmSync(AUTH_DIR, { recursive: true, force: true });
       console.log('[SignaBot] Sessao removida com sucesso.');
     }
-  } catch (e) {
-    console.log('[SignaBot] Erro ao remover sessao: ' + e.message);
-  }
+  } catch (e) { console.log('[SignaBot] Erro ao remover sessao: ' + e.message); }
 };
 
-// Contador de erros 405 consecutivos
 let fatal405Count = 0;
 let reconnectAttempts = 0;
 
 const connectBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-  const { version, isLatest } = await fetchLatestBaileysVersion();
+  const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: Browsers.macOS('Desktop'),
+    browser: ['SignaBot', 'Safari', '604.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 30000,
@@ -940,10 +1568,13 @@ const connectBot = async () => {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Agendamentos - verificar a cada 1 minuto
+  const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
+  const birthdayInterval = setInterval(() => checkBirthdays(sock), 3600000);
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // Exibir QR Code no terminal
     if (qr) {
       fatal405Count = 0;
       console.log('\n==============================');
@@ -954,13 +1585,16 @@ const connectBot = async () => {
     }
 
     if (connection === 'close') {
-      const err = lastDisconnect?.error;
-      const statusCode = (err instanceof Boom) ? err.output.statusCode : 0;
+      clearInterval(scheduleInterval);
+      clearInterval(birthdayInterval);
+
+      const statusCode = (lastDisconnect?.error instanceof Boom)
+        ? lastDisconnect.error.output.statusCode : 0;
 
       console.log('[SignaBot] Conexao fechada. Codigo: ' + statusCode);
 
       if (statusCode === DisconnectReason.loggedOut || statusCode === 440) {
-        console.log('[SignaBot] Sessao encerrada (codigo ' + statusCode + '). Limpando e gerando novo QR em 10s...');
+        console.log('[SignaBot] Sessao encerrada. Limpando e gerando novo QR em 10s...');
         clearSession();
         reconnectAttempts = 0;
         fatal405Count = 0;
@@ -970,15 +1604,13 @@ const connectBot = async () => {
 
       if (statusCode === 405 || statusCode === 403) {
         fatal405Count++;
-
         if (fatal405Count >= 3) {
-          console.log('[SignaBot] Muitas tentativas recusadas (405). IP bloqueado temporariamente.');
-          console.log('[SignaBot] Aguardando 10 minutos antes de tentar novamente...');
+          console.log('[SignaBot] IP bloqueado temporariamente. Aguardando 10 minutos...');
           fatal405Count = 0;
           setTimeout(() => connectBot(), 10 * 60 * 1000);
         } else {
           const delay = fatal405Count * 60000;
-          console.log('[SignaBot] Erro 405 (#' + fatal405Count + '). Aguardando ' + (delay / 1000) + 's...');
+          console.log(`[SignaBot] Erro 405 (#${fatal405Count}). Aguardando ${delay / 1000}s...`);
           setTimeout(() => connectBot(), delay);
         }
         return;
@@ -986,143 +1618,276 @@ const connectBot = async () => {
 
       const delay = Math.min(5000 * Math.pow(2, reconnectAttempts), 60000);
       reconnectAttempts++;
-      console.log('[SignaBot] Tentativa ' + reconnectAttempts + ' — reconectando em ' + (delay / 1000) + 's...');
+      console.log(`[SignaBot] Tentativa ${reconnectAttempts} — reconectando em ${delay / 1000}s...`);
       setTimeout(() => connectBot(), delay);
 
     } else if (connection === 'open') {
       reconnectAttempts = 0;
       fatal405Count = 0;
       console.log('[SignaBot] Conectado com sucesso!');
-      console.log('[SignaBot] Número do bot: ' + sock.user.id.split(':')[0]);
+      console.log('[SignaBot] Numero: ' + sock.user.id.split(':')[0]);
     } else if (connection === 'connecting') {
       console.log('[SignaBot] Conectando ao WhatsApp...');
     }
   });
-  
-  // Evento de mensagens
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const m = messages[0];
-    
-    if (!m.message) return;
-    if (m.key.fromMe) return;
-    
-    const messageType = Object.keys(m.message)[0];
-    const body =
-      messageType === 'conversation'
-        ? m.message.conversation
-        : messageType === 'extendedTextMessage'
-        ? m.message.extendedTextMessage.text
-        : '';
-    
-    const isGroup = m.key.remoteJid.endsWith('@g.us');
-    const groupId = m.key.remoteJid;
-    const sender = m.key.participant || m.key.remoteJid;
-    
-    // Registrar atividade
-    if (isGroup) {
-      logActivity(groupId, sender);
-    }
-    
-    // Iniciar teste grátis automaticamente (10 minutos)
-    if (isGroup && !subscriptions[groupId]) {
-      subscriptions[groupId] = {
-        type: 'trial',
-        activatedAt: Date.now(),
-        expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
-        notified: false
-      };
-      saveDB('subscriptions', subscriptions);
-      
-      await sock.sendMessage(groupId, {
-        text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, o bot será bloqueado até que o dono ative a assinatura com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
-      });
-    }
-    
-    // Antilink
-    if (isGroup) {
-      const settings = getGroupSettings(groupId);
-      if (settings.antilink && !isOwner(sender)) {
-        const hasLink = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/.test(body);
-        
-        if (hasLink) {
-          const adminCheck = await isAdmin(sock, groupId, sender);
-          if (!adminCheck) {
-            await sock.sendMessage(groupId, {
-              text: '🚫 Links não são permitidos neste grupo!',
-            });
-            
+
+  // ============================================================
+  // EVENTOS DE MENSAGEM
+  // ============================================================
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const message of messages) {
+      try {
+        if (!message.message) continue;
+        if (message.key.fromMe) continue;
+
+        const groupId = message.key.remoteJid;
+        const sender = message.key.participant || message.key.remoteJid;
+        const isGroup = groupId.endsWith('@g.us');
+
+        // Ignorar lista negra
+        if (blacklist[sender]) {
+          if (isGroup) {
+            try { await sock.groupParticipantsUpdate(groupId, [sender], 'remove'); } catch {}
+          }
+          continue;
+        }
+
+        // Registrar atividade
+        if (isGroup) logActivity(groupId, sender);
+
+        // Verificar se membro esta mutado
+        if (isGroup && muted[groupId]?.includes(sender)) {
+          try {
+            await sock.sendMessage(groupId, { delete: message.key });
+          } catch {}
+          continue;
+        }
+
+        const settings = isGroup ? getGroupSettings(groupId) : {};
+
+        // Obter texto da mensagem
+        const msgType = Object.keys(message.message)[0];
+        let body = '';
+
+        if (msgType === 'conversation') {
+          body = message.message.conversation;
+        } else if (msgType === 'extendedTextMessage') {
+          body = message.message.extendedTextMessage.text;
+        } else if (msgType === 'imageMessage') {
+          body = message.message.imageMessage.caption || '';
+        } else if (msgType === 'videoMessage') {
+          body = message.message.videoMessage.caption || '';
+        } else if (msgType === 'viewOnceMessage') {
+          // Revelar view-once se ativado
+          if (isGroup && settings.antiViewOnce) {
             try {
-              await sock.sendMessage(groupId, { delete: m.key });
-              await sock.groupParticipantsUpdate(groupId, [sender], 'remove');
+              const inner = message.message.viewOnceMessage.message;
+              const innerType = Object.keys(inner)[0];
+              const innerMsg = inner[innerType];
+              const mediaType = innerType === 'imageMessage' ? 'image' : 'video';
+              const buffer = await downloadMedia(innerMsg, mediaType);
+              if (buffer) {
+                await sock.sendMessage(groupId, {
+                  [mediaType]: buffer,
+                  caption: `Mensagem visualizacao unica de @${sender.split('@')[0]} revelada:`,
+                }, { mentions: [sender] });
+              }
             } catch {}
           }
+          continue;
         }
+
+        // ANTILINK
+        if (isGroup && settings.antilink && body) {
+          const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+          const urls = body.match(urlRegex);
+          if (urls) {
+            const allowed = settings.antilinkAllow || ['instagram.com', 'youtube.com', 'youtu.be', 'tiktok.com'];
+            const hasBlocked = urls.some(url => !allowed.some(a => url.includes(a)));
+            if (hasBlocked) {
+              const isAdminSender = await isAdmin(sock, groupId, sender);
+              if (!isAdminSender && !isOwner(sender)) {
+                try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
+                await sock.sendMessage(groupId, {
+                  text: `@${sender.split('@')[0]}, links nao sao permitidos neste grupo!`,
+                  mentions: [sender],
+                });
+
+                // Avisar se mandar link pro bot no privado
+                continue;
+              }
+            }
+
+            // Auto-baixar links de YouTube/TikTok/Instagram
+            if (settings.autoBaixar) {
+              for (const url of urls) {
+                if (url.includes('youtu')) {
+                  try {
+                    const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(url)}&type=audio`;
+                    const { data } = await axios.get(apiUrl, { timeout: 30000 });
+                    if (data?.url) {
+                      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+                      await sock.sendMessage(groupId, { audio: Buffer.from(audioResp.data), mimetype: 'audio/mpeg', ptt: false }, { quoted: message });
+                    }
+                  } catch {}
+                }
+                if (url.includes('tiktok')) {
+                  try {
+                    const { data } = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+                    if (data?.video?.noWatermark) {
+                      const resp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
+                      await sock.sendMessage(groupId, { video: Buffer.from(resp.data) }, { quoted: message });
+                    }
+                  } catch {}
+                }
+              }
+            }
+          }
+        }
+
+        // FILTRO DE PALAVROES
+        if (isGroup && settings.antiPalavra && body && settings.palavroes?.length) {
+          const lower = body.toLowerCase();
+          const found = settings.palavroes.find(p => lower.includes(p));
+          if (found) {
+            const isAdminSender = await isAdmin(sock, groupId, sender);
+            if (!isAdminSender && !isOwner(sender)) {
+              try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
+              await sock.sendMessage(groupId, {
+                text: `@${sender.split('@')[0]}, palavroes nao sao permitidos!`,
+                mentions: [sender],
+              });
+              continue;
+            }
+          }
+        }
+
+        // SO-ADM
+        if (isGroup && settings.soAdm && body) {
+          const isAdminSender = await isAdmin(sock, groupId, sender);
+          if (!isAdminSender && !isOwner(sender) && !hasCargo(groupId, sender, 'admin', 'mod', 'aux')) {
+            try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
+            continue;
+          }
+        }
+
+        // VERIFICAR AFK (se mencionar alguem que esta ausente)
+        if (isGroup && body) {
+          const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          for (const uid of mentioned) {
+            if (afkList[uid]) {
+              const afk = afkList[uid];
+              await sock.sendMessage(groupId, {
+                text: `@${uid.split('@')[0]} esta ausente: "${afk.msg}" (ha ${formatTime(Date.now() - afk.time)})`,
+                mentions: [uid],
+              });
+            }
+          }
+          // Se o proprio usuario que estava ausente mandou mensagem, remover AFK
+          if (afkList[sender]) {
+            const afk = afkList[sender];
+            delete afkList[sender];
+            saveDB('afkList', afkList);
+            await sock.sendMessage(groupId, {
+              text: `@${sender.split('@')[0]} voltou da ausencia! (ficou ausente por ${formatTime(Date.now() - afk.time)})`,
+              mentions: [sender],
+            });
+          }
+        }
+
+        // PROCESSAR COMANDOS
+        if (body && (body.startsWith(PREFIX) || body.startsWith(PREFIX2))) {
+          const parts = body.trim().split(/\s+/);
+          const command = parts[0].toLowerCase();
+          const args = parts.slice(1);
+          await handleCommand(sock, message, groupId, sender, command, args, isGroup);
+        }
+
+      } catch (err) {
+        console.log('[SignaBot] Erro ao processar mensagem: ' + err.message);
       }
     }
-    
-    // Processar comandos
-    if (body.startsWith(PREFIX) || body.startsWith('!')) {
-      const args = body.trim().split(/ +/);
-      const command = args.shift().toLowerCase();
-      
-      await handleCommand(sock, m, groupId, sender, command, args, isGroup);
-    }
   });
-  
-  // Evento de participantes (boas-vindas)
-  sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
-    const settings = getGroupSettings(id);
-    
+
+  // ============================================================
+  // EVENTOS DE GRUPO (entrar/sair)
+  // ============================================================
+
+  sock.ev.on('group-participants.update', async ({ id: groupId, participants, action }) => {
+    const settings = getGroupSettings(groupId);
+    const sub = checkSubscription(groupId);
+    if (!sub.active) return;
+
     if (action === 'add' && settings.welcome) {
       for (const participant of participants) {
-        const number = participant.split('@')[0];
-        
-        await sock.sendMessage(id, {
-          text: `👋 Bem-vindo(a) @${number}!\n\n${settings.bemVindoMsg}`,
-          mentions: [participant],
-        });
-      }
-    }
-    
-    if (action === 'remove' && settings.welcome) {
-      for (const participant of participants) {
-        const number = participant.split('@')[0];
-        
-        await sock.sendMessage(id, {
-          text: `👋 @${number} saiu do grupo.\n\n${settings.saiuMsg}`,
-          mentions: [participant],
-        });
-      }
-    }
-  });
-  
-  // Verificar assinaturas expiradas a cada minuto
-  setInterval(async () => {
-    const now = Date.now();
-    
-    for (const [groupId, sub] of Object.entries(subscriptions)) {
-      // Se expirou e ainda não notificou
-      if (sub.expiresAt < now && !sub.notified) {
+        // Verificar lista negra
+        if (blacklist[participant]) {
+          try { await sock.groupParticipantsUpdate(groupId, [participant], 'remove'); } catch {}
+          continue;
+        }
+
+        const welcomeMsg = settings.welcomeMsg ||
+          `Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\nDigite #menu para ver os comandos disponíveis.`;
+
         try {
+          const ppUrl = await sock.profilePictureUrl(participant, 'image').catch(() => null);
+          if (ppUrl) {
+            await sock.sendMessage(groupId, {
+              image: { url: ppUrl },
+              caption: welcomeMsg,
+              mentions: [participant],
+            });
+          } else {
+            await sock.sendMessage(groupId, {
+              text: welcomeMsg,
+              mentions: [participant],
+            });
+          }
+        } catch {
           await sock.sendMessage(groupId, {
-            text: `⚠️ *Assinatura Expirada*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nO bot está bloqueado até que o dono ative novamente com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
-          });
-          
-          subscriptions[groupId].notified = true;
-          saveDB('subscriptions', subscriptions);
-          console.log(`[SignaBot] Notificação de expiração enviada para ${groupId}`);
-        } catch (err) {
-          console.log(`[SignaBot] Erro ao notificar expiração: ${err.message}`);
+            text: welcomeMsg,
+            mentions: [participant],
+          }).catch(() => {});
         }
       }
     }
-  }, 60000); // Verifica a cada minuto
-  
+
+    if (action === 'remove') {
+      for (const participant of participants) {
+        if (settings.leaveMsg) {
+          await sock.sendMessage(groupId, {
+            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
+            mentions: [participant],
+          }).catch(() => {});
+        }
+      }
+    }
+  });
+
+  // Anti-chamada
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+      if (call.status === 'offer') {
+        const groupId = call.from;
+        const settings = getGroupSettings(groupId);
+        if (settings.anticall) {
+          await sock.rejectCall(call.id, call.from);
+          await sock.sendMessage(call.from, {
+            text: 'Chamadas nao sao permitidas! Por favor, use mensagens de texto.',
+          }).catch(() => {});
+        }
+      }
+    }
+  });
+
   return sock;
 };
 
 // Iniciar bot
-connectBot().catch((err) => {
-  console.error('❌ Erro ao conectar:', err);
-  process.exit(1);
+connectBot().catch(err => {
+  console.log('[SignaBot] Erro fatal ao iniciar: ' + err.message);
+  setTimeout(() => connectBot(), 10000);
 });
