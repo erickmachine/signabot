@@ -1,3 +1,7 @@
+// ================================
+// SIGNABOT - Bot WhatsApp Completo
+// ================================
+
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -27,6 +31,9 @@ const PREFIX = '#';
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961';
 const OWNER_JIDS = [`${OWNER_NUMBER}@s.whatsapp.net`, '559299652961@s.whatsapp.net'];
+
+// Comandos que o dono pode executar mesmo com assinatura expirada
+const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar'];
 
 // Base de dados em JSON
 const DATA_DIR = path.join(__dirname, 'database');
@@ -78,27 +85,29 @@ const isAdmin = async (sock, groupId, userId) => {
   }
 };
 
-// Verificar assinatura do grupo
+// Verificar assinatura do grupo - VERSÃO CORRIGIDA
 const checkSubscription = (groupId) => {
   const sub = subscriptions[groupId];
   if (!sub) return { active: false, reason: 'Sem assinatura' };
   
   const now = Date.now();
-  if (sub.type === 'trial') {
-    if (now > sub.expiresAt) {
-      return { active: false, reason: 'Teste grátis expirado' };
-    }
-    return { active: true, type: 'trial', expiresAt: sub.expiresAt };
+  
+  // Se já expirou, retorna inativo independente do tipo
+  if (now > sub.expiresAt) {
+    return { 
+      active: false, 
+      reason: sub.type === 'trial' ? 'Teste grátis expirado' : 'Assinatura expirada',
+      type: sub.type,
+      expiresAt: sub.expiresAt 
+    };
   }
   
-  if (sub.type === 'paid') {
-    if (now > sub.expiresAt) {
-      return { active: false, reason: 'Assinatura expirada' };
-    }
-    return { active: true, type: 'paid', expiresAt: sub.expiresAt };
-  }
-  
-  return { active: false, reason: 'Assinatura inválida' };
+  // Ainda está ativo
+  return { 
+    active: true, 
+    type: sub.type, 
+    expiresAt: sub.expiresAt 
+  };
 };
 
 // Formatar tempo restante
@@ -111,7 +120,9 @@ const formatTimeRemaining = (expiresAt) => {
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
   
-  return `${days}d ${hours}h ${minutes}m`;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 };
 
 // Registrar atividade do usuário
@@ -190,18 +201,25 @@ const downloadYoutube = async (url, type = 'audio') => {
 };
 
 // ================================
-// HANDLER DE COMANDOS
+// HANDLER DE COMANDOS - VERSÃO CORRIGIDA
 // ================================
 
 const handleCommand = async (sock, message, groupId, sender, command, args, isGroup) => {
   const senderName = message.pushName || 'Usuário';
   const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
   
-  // Verificar assinatura (exceto comandos do dono)
-  if (isGroup && !['!ativar', '!status', '!cancelar'].includes(command)) {
+  // Só verifica assinatura se for grupo e NÃO for comando do dono
+  if (isGroup && !isOwner(sender)) {
     const sub = checkSubscription(groupId);
-    if (!sub.active && !isOwner(sender)) {
-      return reply(`⚠️ ${sub.reason}. Entre em contato com o dono para ativar a assinatura.`);
+    
+    // Se não estiver ativo, bloqueia TODOS os comandos (exceto #menu que é informativo)
+    if (!sub.active) {
+      // Permite apenas #menu para informar sobre a assinatura
+      if (command === '#menu') {
+        // Deixa passar para mostrar o menu
+      } else {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nEntre em contato com o dono para ativar:\nwa.me/${OWNER_NUMBER}`);
+      }
     }
   }
   
@@ -213,7 +231,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   // ================================
   
   if (command === '!ativar' && isOwner(sender) && isGroup) {
-    if (args.length < 2) {
+    if (args.length < 1) {
       return reply('Use: !ativar [30|60] dias');
     }
     
@@ -228,39 +246,61 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
       activatedAt: Date.now(),
       expiresAt,
       days,
+      notified: false
     };
     saveDB('subscriptions', subscriptions);
     
-    return reply(`✅ Assinatura ativada por ${days} dias!\n⏰ Expira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+    const dataExpiracao = new Date(expiresAt).toLocaleString('pt-BR');
+    return reply(`✅ *Assinatura Ativada!*\n\n📆 Período: ${days} dias\n⏰ Expira em: ${dataExpiracao}\n\nAgora o grupo pode usar todos os comandos!`);
   }
   
   if (command === '!status' && isGroup) {
     const sub = checkSubscription(groupId);
+    
     if (!sub.active) {
-      return reply(`❌ ${sub.reason}`);
+      const dataExpiracao = sub.expiresAt ? new Date(sub.expiresAt).toLocaleString('pt-BR') : 'N/A';
+      return reply(`❌ *Assinatura Inativa*\n\nMotivo: ${sub.reason}\nExpirou em: ${dataExpiracao}\n\nContate o dono para ativar:\nwa.me/${OWNER_NUMBER}`);
     }
     
     const timeLeft = formatTimeRemaining(sub.expiresAt);
-    const type = sub.type === 'trial' ? 'Teste Grátis' : 'Assinatura Paga';
-    return reply(`📊 Status da Assinatura\n\nTipo: ${type}\nTempo restante: ${timeLeft}\nExpira em: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
+    const type = sub.type === 'trial' ? '🔰 Teste Grátis' : '💎 Assinatura Paga';
+    const dataExpiracao = new Date(sub.expiresAt).toLocaleString('pt-BR');
+    
+    return reply(`📊 *Status da Assinatura*\n\n${type}\n⏳ Tempo restante: ${timeLeft}\n📅 Expira em: ${dataExpiracao}`);
   }
   
   if (command === '!cancelar' && isOwner(sender) && isGroup) {
+    if (!subscriptions[groupId]) {
+      return reply('❌ Este grupo não possui assinatura ativa.');
+    }
+    
     delete subscriptions[groupId];
     saveDB('subscriptions', subscriptions);
-    return reply('🚫 Assinatura cancelada.');
+    return reply('🚫 *Assinatura Cancelada*\n\nO grupo não terá mais acesso aos comandos.');
   }
   
   // ================================
-  // COMANDOS GERAIS - MENU
+  // COMANDOS GERAIS - MENU (VERSÃO ADAPTADA)
   // ================================
   
   if (command === '#menu') {
+    const sub = isGroup ? checkSubscription(groupId) : { active: true };
+    
+    let statusText = '';
+    if (isGroup && !isOwner(sender)) {
+      if (!sub.active) {
+        statusText = `\n⚠️ *Acesso Bloqueado*\nMotivo: ${sub.reason}\n`;
+      } else {
+        const timeLeft = formatTimeRemaining(sub.expiresAt);
+        statusText = `\n📊 Status: ${sub.type === 'trial' ? 'Teste' : 'Ativo'} (${timeLeft} restantes)\n`;
+      }
+    }
+    
     const menuText = `
 ╔═══════════════════╗
 ║   ${BOT_NAME} - Menu Principal   ║
 ╚═══════════════════╝
-
+${statusText}
 📋 *Menus Disponíveis:*
 
 ⎨⎟⟐⃟➪ #menu-figurinhas
@@ -352,6 +392,14 @@ wa.me/${OWNER_NUMBER}
   // ================================
   
   if (command === '#sticker' || command === '#fig') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
     if (!quoted || (!quoted.imageMessage && !quoted.videoMessage)) {
       return reply('❌ Marque uma imagem ou vídeo!');
@@ -379,6 +427,14 @@ wa.me/${OWNER_NUMBER}
   // ================================
   
   if (command === '#play') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     if (args.length === 0) {
       return reply('❌ Use: #play [nome da música]');
     }
@@ -390,7 +446,7 @@ wa.me/${OWNER_NUMBER}
       return reply('❌ Nenhum resultado encontrado.');
     }
     
-    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n Baixando áudio...`);
+    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n⏳ Baixando áudio...`);
     
     try {
       const download = await downloadYoutube(video.url, 'audio');
@@ -409,6 +465,14 @@ wa.me/${OWNER_NUMBER}
   }
   
   if (command === '#playvideo') {
+    // Verifica assinatura novamente para comandos específicos
+    if (isGroup && !isOwner(sender)) {
+      const sub = checkSubscription(groupId);
+      if (!sub.active) {
+        return reply(`⚠️ *Acesso Bloqueado*\n\nMotivo: ${sub.reason}\n\nContate o dono: wa.me/${OWNER_NUMBER}`);
+      }
+    }
+    
     if (args.length === 0) {
       return reply('❌ Use: #playvideo [nome do vídeo]');
     }
@@ -761,7 +825,6 @@ const connectBot = async () => {
     version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    // Usar browser padrão para evitar o erro 405
     browser: Browsers.macOS('Desktop'),
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
@@ -782,7 +845,7 @@ const connectBot = async () => {
 
     // Exibir QR Code no terminal
     if (qr) {
-      fatal405Count = 0; // QR apareceu — resetar contador
+      fatal405Count = 0;
       console.log('\n==============================');
       console.log('  Escaneie o QR Code abaixo   ');
       console.log('==============================\n');
@@ -796,7 +859,6 @@ const connectBot = async () => {
 
       console.log('[SignaBot] Conexao fechada. Codigo: ' + statusCode);
 
-      // loggedOut (401) ou replaced (440) — deletar sessao e pedir novo QR
       if (statusCode === DisconnectReason.loggedOut || statusCode === 440) {
         console.log('[SignaBot] Sessao encerrada (codigo ' + statusCode + '). Limpando e gerando novo QR em 10s...');
         clearSession();
@@ -806,9 +868,6 @@ const connectBot = async () => {
         return;
       }
 
-      // 405 / 403 — IP bloqueado temporariamente pelo WhatsApp
-      // NAO apagar sessao — o problema e o IP, nao a sessao
-      // Aguardar bastante tempo antes de tentar de novo
       if (statusCode === 405 || statusCode === 403) {
         fatal405Count++;
 
@@ -818,14 +877,13 @@ const connectBot = async () => {
           fatal405Count = 0;
           setTimeout(() => connectBot(), 10 * 60 * 1000);
         } else {
-          const delay = fatal405Count * 60000; // 1min, 2min, 3min...
+          const delay = fatal405Count * 60000;
           console.log('[SignaBot] Erro 405 (#' + fatal405Count + '). Aguardando ' + (delay / 1000) + 's...');
           setTimeout(() => connectBot(), delay);
         }
         return;
       }
 
-      // Outros erros — backoff normal
       const delay = Math.min(5000 * Math.pow(2, reconnectAttempts), 60000);
       reconnectAttempts++;
       console.log('[SignaBot] Tentativa ' + reconnectAttempts + ' — reconectando em ' + (delay / 1000) + 's...');
@@ -865,17 +923,18 @@ const connectBot = async () => {
       logActivity(groupId, sender);
     }
     
-    // Iniciar teste grátis automaticamente
+    // Iniciar teste grátis automaticamente (10 minutos)
     if (isGroup && !subscriptions[groupId]) {
       subscriptions[groupId] = {
         type: 'trial',
         activatedAt: Date.now(),
         expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
+        notified: false
       };
       saveDB('subscriptions', subscriptions);
       
       await sock.sendMessage(groupId, {
-        text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, entre em contato com o dono para ativar a assinatura:\nwa.me/${OWNER_NUMBER}`,
+        text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, o bot será bloqueado até que o dono ative a assinatura com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
       });
     }
     
@@ -938,20 +997,26 @@ const connectBot = async () => {
   });
   
   // Verificar assinaturas expiradas a cada minuto
-  setInterval(() => {
+  setInterval(async () => {
     const now = Date.now();
     
     for (const [groupId, sub] of Object.entries(subscriptions)) {
+      // Se expirou e ainda não notificou
       if (sub.expiresAt < now && !sub.notified) {
-        sock.sendMessage(groupId, {
-          text: `⚠️ *Assinatura Expirada*\n\nA assinatura do grupo expirou. Entre em contato com o dono para renovar:\nwa.me/${OWNER_NUMBER}`,
-        });
-        
-        subscriptions[groupId].notified = true;
-        saveDB('subscriptions', subscriptions);
+        try {
+          await sock.sendMessage(groupId, {
+            text: `⚠️ *Assinatura Expirada*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nO bot está bloqueado até que o dono ative novamente com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
+          });
+          
+          subscriptions[groupId].notified = true;
+          saveDB('subscriptions', subscriptions);
+          console.log(`[SignaBot] Notificação de expiração enviada para ${groupId}`);
+        } catch (err) {
+          console.log(`[SignaBot] Erro ao notificar expiração: ${err.message}`);
+        }
       }
     }
-  }, 60000);
+  }, 60000); // Verifica a cada minuto
   
   return sock;
 };
