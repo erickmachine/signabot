@@ -29,15 +29,27 @@ const ytdl = require('ytdl-core');
 
 const PREFIX = '#';
 const BOT_NAME = 'SignaBot';
-const OWNER_NUMBER = '5592999652961';
-// Corrigido: formato correto do JID
-const OWNER_JIDS = [
-  `55${OWNER_NUMBER.replace(/^55/, '')}@s.whatsapp.net`, 
-  '559299652961@s.whatsapp.net'
-];
+const OWNER_NUMBER = '5592999652961'; // Seu número sem o @s.whatsapp.net
 
-// Comandos que o dono pode executar mesmo com assinatura expirada
-const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar'];
+// ========== CORREÇÃO CRÍTICA - FUNÇÃO ISOWNER ==========
+// Verificar se usuário é dono - VERSÃO CORRIGIDA
+const isOwner = (sender) => {
+  // Extrair apenas os números do sender (remover @s.whatsapp.net e qualquer outro caractere)
+  const senderNumber = sender.split('@')[0].replace(/\D/g, '');
+  const ownerNumber = OWNER_NUMBER.replace(/\D/g, '');
+  
+  console.log(`[DEBUG] Verificando dono:`);
+  console.log(`[DEBUG] Sender completo: ${sender}`);
+  console.log(`[DEBUG] Sender número: ${senderNumber}`);
+  console.log(`[DEBUG] Dono número: ${ownerNumber}`);
+  console.log(`[DEBUG] É dono? ${senderNumber === ownerNumber}`);
+  
+  // Verificar se o número do sender (apenas dígitos) é igual ao número do dono
+  return senderNumber === ownerNumber;
+};
+
+// Lista de comandos que o dono pode executar mesmo com assinatura expirada
+const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar', '!desativar', '!renovar'];
 
 // Base de dados em JSON
 const DATA_DIR = path.join(__dirname, 'database');
@@ -73,11 +85,6 @@ const saveAllDB = () => {
   saveDB('groupSettings', groupSettings);
   saveDB('userActivity', userActivity);
   saveDB('schedules', schedules);
-};
-
-// Verificar se usuário é dono (CORRIGIDO)
-const isOwner = (sender) => {
-  return OWNER_JIDS.some(jid => sender.includes(jid.replace('@s.whatsapp.net', '')));
 };
 
 // Verificar se usuário é admin do grupo
@@ -207,23 +214,33 @@ const downloadYoutube = async (url, type = 'audio') => {
 };
 
 // ================================
-// HANDLER DE COMANDOS
+// HANDLER DE COMANDOS - VERSÃO CORRIGIDA
 // ================================
 
 const handleCommand = async (sock, message, groupId, sender, command, args, isGroup) => {
   const senderName = message.pushName || 'Usuário';
   const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
   
-  // Log para debug
-  console.log(`[COMANDO] ${command} de ${sender} no grupo ${groupId}`);
-  console.log(`[OWNER] É dono? ${isOwner(sender)}`);
+  // Log detalhado para debug
+  console.log('\n========== NOVO COMANDO ==========');
+  console.log(`[COMANDO] ${command}`);
+  console.log(`[SENDER] ${sender}`);
+  console.log(`[GRUPO] ${groupId}`);
+  console.log(`[É DONO?] ${isOwner(sender)}`);
+  console.log(`[ARGS]`, args);
+  console.log('=================================\n');
   
-  // Só verifica assinatura se for grupo e NÃO for comando do dono
-  if (isGroup && !isOwner(sender)) {
+  // Só verifica assinatura se for grupo
+  if (isGroup) {
     const sub = checkSubscription(groupId);
+    const ownerCheck = isOwner(sender);
     
-    // Se não estiver ativo, bloqueia TODOS os comandos (exceto #menu que é informativo)
-    if (!sub.active) {
+    console.log(`[ASSINATURA] Ativa? ${sub.active}, Tipo: ${sub.type}, Dono? ${ownerCheck}`);
+    
+    // Se não estiver ativo e NÃO for o dono, bloqueia
+    if (!sub.active && !ownerCheck) {
+      console.log(`[BLOQUEADO] Usuário comum tentou comando com assinatura expirada`);
+      
       // Permite apenas #menu para informar sobre a assinatura
       if (command === '#menu') {
         // Deixa passar para mostrar o menu
@@ -241,8 +258,11 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   // ================================
   
   if (command === '!ativar' && isGroup) {
+    console.log(`[!ATIVAR] Executando comando de ativação`);
+    
     // Verifica se é o dono
     if (!isOwner(sender)) {
+      console.log(`[!ATIVAR] NEGADO - Não é o dono`);
       return reply('❌ Apenas o dono do bot pode usar este comando.');
     }
     
@@ -266,6 +286,8 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     saveDB('subscriptions', subscriptions);
     
     const dataExpiracao = new Date(expiresAt).toLocaleString('pt-BR');
+    console.log(`[!ATIVAR] Assinatura ativada para ${groupId} até ${dataExpiracao}`);
+    
     return reply(`✅ *Assinatura Ativada!*\n\n📆 Período: ${days} dias\n⏰ Expira em: ${dataExpiracao}\n\nAgora o grupo pode usar todos os comandos!`);
   }
   
@@ -304,15 +326,18 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   
   if (command === '#menu') {
     const sub = isGroup ? checkSubscription(groupId) : { active: true };
+    const ownerCheck = isOwner(sender);
     
     let statusText = '';
-    if (isGroup && !isOwner(sender)) {
+    if (isGroup && !ownerCheck) {
       if (!sub.active) {
         statusText = `\n⚠️ *Acesso Bloqueado*\nMotivo: ${sub.reason}\n`;
       } else {
         const timeLeft = formatTimeRemaining(sub.expiresAt);
         statusText = `\n📊 Status: ${sub.type === 'trial' ? '🔰 Teste' : '💎 Ativo'} (${timeLeft} restantes)\n`;
       }
+    } else if (ownerCheck) {
+      statusText = `\n👑 *Modo Dono*\n`;
     }
     
     const menuText = `
@@ -322,12 +347,12 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ${statusText}
 📋 *Menus Disponíveis:*
 
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-figurinhas
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-brincadeiras
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-adm
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-download
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-info
-${!sub.active && !isOwner(sender) ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-grupo
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-figurinhas
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-brincadeiras
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-adm
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-download
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-info
+${!sub.active && !ownerCheck ? '🔒 ' : '⎨⎟⟐⃟➪ '}#menu-grupo
 
 💎 *Assinatura:*
 !status - Ver status da assinatura
@@ -952,7 +977,7 @@ const connectBot = async () => {
       reconnectAttempts = 0;
       fatal405Count = 0;
       console.log('[SignaBot] Conectado com sucesso!');
-      console.log('[SignaBot] Numero: ' + sock.user.id.split(':')[0]);
+      console.log('[SignaBot] Número do bot: ' + sock.user.id.split(':')[0]);
     } else if (connection === 'connecting') {
       console.log('[SignaBot] Conectando ao WhatsApp...');
     }
