@@ -733,58 +733,89 @@ Admins: ${groupMetadata.participants.filter((p) => p.admin).length}
 // CONEXÃO DO BOT
 // ================================
 
+// Códigos que indicam sessão corrompida — deletar auth e gerar novo QR
+const FATAL_CODES = [
+  DisconnectReason.loggedOut,   // 401
+  DisconnectReason.forbidden,   // 403
+  405,  // Policy Violation
+  440,  // Replaced by another device
+];
+
+const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
+
+// Apaga a pasta de sessão para forçar novo QR Code
+const clearSession = () => {
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+      console.log('[SignaBot] Sessao antiga removida. Aguardando novo QR Code...');
+    }
+  } catch (e) {
+    console.log('[SignaBot] Erro ao remover sessao: ' + e.message);
+  }
+};
+
+let reconnectAttempts = 0;
+
 const connectBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-  
+
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
     browser: ['SignaBot', 'Chrome', '1.0.0'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 10000,
+    keepAliveIntervalMs: 25000,
     emitOwnEvents: false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
     markOnlineOnConnect: true,
   });
-  
+
   sock.ev.on('creds.update', saveCreds);
-  
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-    
-    // Exibir QR Code no terminal quando disponível
+
+    // Exibir QR Code no terminal
     if (qr) {
-      console.log('\n\n==============================');
-      console.log('   Escaneie o QR Code abaixo  ');
+      console.log('\n==============================');
+      console.log('  Escaneie o QR Code abaixo   ');
       console.log('==============================\n');
       qrcode.generate(qr, { small: true });
       console.log('\n==============================\n');
     }
-    
+
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode
         : 0;
-      
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      
-      console.log(`Conexão fechada (código: ${statusCode}). Reconectando: ${shouldReconnect}`);
-      
-      if (shouldReconnect) {
-        // Aguardar 3 segundos antes de reconectar para evitar loop rápido
+
+      console.log('[SignaBot] Conexao fechada. Codigo: ' + statusCode);
+
+      if (FATAL_CODES.includes(statusCode)) {
+        // Sessão inválida: limpar auth e reconectar para mostrar novo QR
+        console.log('[SignaBot] Sessao invalida (codigo ' + statusCode + '). Limpando sessao e gerando novo QR...');
+        clearSession();
+        reconnectAttempts = 0;
         setTimeout(() => connectBot(), 3000);
-      } else {
-        console.log('Sessão encerrada (loggedOut). Delete a pasta auth_info_baileys e reinicie o bot.');
-        process.exit(1);
+        return;
       }
+
+      // Backoff exponencial para outros erros: 5s, 10s, 20s... max 60s
+      const delay = Math.min(5000 * Math.pow(2, reconnectAttempts), 60000);
+      reconnectAttempts++;
+      console.log('[SignaBot] Tentativa ' + reconnectAttempts + ' — reconectando em ' + (delay / 1000) + 's...');
+      setTimeout(() => connectBot(), delay);
+
     } else if (connection === 'open') {
-      console.log('✅ SignaBot conectado com sucesso!');
-      console.log(`📱 Número do bot: ${sock.user.id.split(':')[0]}`);
+      reconnectAttempts = 0;
+      console.log('[SignaBot] Conectado com sucesso!');
+      console.log('[SignaBot] Numero do bot: ' + sock.user.id.split(':')[0]);
     } else if (connection === 'connecting') {
-      console.log('🔄 Conectando ao WhatsApp...');
+      console.log('[SignaBot] Conectando ao WhatsApp...');
     }
   });
   
