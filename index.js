@@ -1071,19 +1071,28 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     return reply('Nota removida!');
   }
 
-  // SORTEIO
-  if (command === '#sorteio') {
-    try {
-      const meta = await sock.groupMetadata(groupId);
-      const members = meta.participants.filter(p => p.id !== (await sock.user?.id));
-      if (!members.length) return reply('Nenhum membro para sortear.');
-      const winner = members[Math.floor(Math.random() * members.length)];
-      return sock.sendMessage(groupId, {
-        text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
-        mentions: [winner.id],
-      });
-    } catch { return reply('Erro ao realizar sorteio.'); }
+  // SORTEIO - CORRIGIDO
+if (command === '#sorteio') {
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    // Primeiro obtém o ID do bot
+    const botId = sock.user?.id;
+    // Depois faz o filtro sem usar await
+    const members = botId 
+      ? meta.participants.filter(p => p.id !== botId)
+      : meta.participants;
+    
+    if (!members.length) return reply('Nenhum membro para sortear.');
+    const winner = members[Math.floor(Math.random() * members.length)];
+    return sock.sendMessage(groupId, {
+      text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
+      mentions: [winner.id],
+    });
+  } catch (err) { 
+    console.log('[ERRO SORTEIO]', err);
+    return reply('Erro ao realizar sorteio.'); 
   }
+}
 
   // MENSAGENS AGENDADAS
   if (command === '#mensagem-automatica') {
