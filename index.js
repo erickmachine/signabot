@@ -758,12 +758,12 @@ const connectBot = async () => {
     logger: pino({ level: 'silent' }),
     auth: state,
     // Usar diferentes user agents para evitar bloqueio por fingerprint
-    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    browser: ['SignaBot', 'Safari', '604.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 30000,
-    retryRequestDelayMs: 2000,
-    maxMsgRetryCount: 2,
+    retryRequestDelayMs: 3000,
+    maxMsgRetryCount: 3,
     emitOwnEvents: false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
@@ -802,22 +802,20 @@ const connectBot = async () => {
         return;
       }
 
-      // 405 — IP/numero bloqueado temporariamente pelo WhatsApp
-      // NAO reconectar em loop: aguardar muito mais tempo
+      // 405 / 403 — IP bloqueado temporariamente pelo WhatsApp
+      // NAO apagar sessao — o problema e o IP, nao a sessao
+      // Aguardar bastante tempo antes de tentar de novo
       if (statusCode === 405 || statusCode === 403) {
         fatal405Count++;
-        clearSession();
 
         if (fatal405Count >= 3) {
-          // Apos 3 tentativas com 405, aguardar 5 minutos
-          console.log('[SignaBot] Muitas tentativas recusadas (405). O WhatsApp bloqueou temporariamente.');
-          console.log('[SignaBot] Aguardando 5 minutos antes de tentar novamente...');
-          console.log('[SignaBot] Se persistir, aguarde 30 minutos e reinicie manualmente.');
+          console.log('[SignaBot] Muitas tentativas recusadas (405). IP bloqueado temporariamente.');
+          console.log('[SignaBot] Aguardando 10 minutos antes de tentar novamente...');
           fatal405Count = 0;
-          setTimeout(() => connectBot(), 5 * 60 * 1000);
+          setTimeout(() => connectBot(), 10 * 60 * 1000);
         } else {
-          const delay = fatal405Count * 30000; // 30s, 60s, 90s...
-          console.log('[SignaBot] Erro 405 (#' + fatal405Count + '). Aguardando ' + (delay / 1000) + 's antes de tentar novamente...');
+          const delay = fatal405Count * 60000; // 1min, 2min, 3min...
+          console.log('[SignaBot] Erro 405 (#' + fatal405Count + '). Aguardando ' + (delay / 1000) + 's...');
           setTimeout(() => connectBot(), delay);
         }
         return;
