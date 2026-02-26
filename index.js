@@ -733,14 +733,6 @@ Admins: ${groupMetadata.participants.filter((p) => p.admin).length}
 // CONEXÃO DO BOT
 // ================================
 
-// Códigos que indicam sessão corrompida — deletar auth e gerar novo QR
-const FATAL_CODES = [
-  DisconnectReason.loggedOut,   // 401
-  DisconnectReason.forbidden,   // 403
-  405,  // Policy Violation
-  440,  // Replaced by another device
-];
-
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
 // Apaga a pasta de sessão para forçar novo QR Code
@@ -748,13 +740,15 @@ const clearSession = () => {
   try {
     if (fs.existsSync(AUTH_DIR)) {
       fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-      console.log('[SignaBot] Sessao antiga removida. Aguardando novo QR Code...');
+      console.log('[SignaBot] Sessao removida com sucesso.');
     }
   } catch (e) {
     console.log('[SignaBot] Erro ao remover sessao: ' + e.message);
   }
 };
 
+// Contador de erros 405 consecutivos
+let fatal405Count = 0;
 let reconnectAttempts = 0;
 
 const connectBot = async () => {
@@ -763,15 +757,18 @@ const connectBot = async () => {
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: ['SignaBot', 'Chrome', '1.0.0'],
+    // Usar diferentes user agents para evitar bloqueio por fingerprint
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
+    keepAliveIntervalMs: 30000,
+    retryRequestDelayMs: 2000,
+    maxMsgRetryCount: 2,
     emitOwnEvents: false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: false,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -781,6 +778,7 @@ const connectBot = async () => {
 
     // Exibir QR Code no terminal
     if (qr) {
+      fatal405Count = 0; // QR apareceu — resetar contador
       console.log('\n==============================');
       console.log('  Escaneie o QR Code abaixo   ');
       console.log('==============================\n');
@@ -789,22 +787,43 @@ const connectBot = async () => {
     }
 
     if (connection === 'close') {
-      const statusCode = (lastDisconnect?.error instanceof Boom)
-        ? lastDisconnect.error.output.statusCode
-        : 0;
+      const err = lastDisconnect?.error;
+      const statusCode = (err instanceof Boom) ? err.output.statusCode : 0;
 
       console.log('[SignaBot] Conexao fechada. Codigo: ' + statusCode);
 
-      if (FATAL_CODES.includes(statusCode)) {
-        // Sessão inválida: limpar auth e reconectar para mostrar novo QR
-        console.log('[SignaBot] Sessao invalida (codigo ' + statusCode + '). Limpando sessao e gerando novo QR...');
+      // loggedOut (401) ou replaced (440) — deletar sessao e pedir novo QR
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 440) {
+        console.log('[SignaBot] Sessao encerrada (codigo ' + statusCode + '). Limpando e gerando novo QR em 10s...');
         clearSession();
         reconnectAttempts = 0;
-        setTimeout(() => connectBot(), 3000);
+        fatal405Count = 0;
+        setTimeout(() => connectBot(), 10000);
         return;
       }
 
-      // Backoff exponencial para outros erros: 5s, 10s, 20s... max 60s
+      // 405 — IP/numero bloqueado temporariamente pelo WhatsApp
+      // NAO reconectar em loop: aguardar muito mais tempo
+      if (statusCode === 405 || statusCode === 403) {
+        fatal405Count++;
+        clearSession();
+
+        if (fatal405Count >= 3) {
+          // Apos 3 tentativas com 405, aguardar 5 minutos
+          console.log('[SignaBot] Muitas tentativas recusadas (405). O WhatsApp bloqueou temporariamente.');
+          console.log('[SignaBot] Aguardando 5 minutos antes de tentar novamente...');
+          console.log('[SignaBot] Se persistir, aguarde 30 minutos e reinicie manualmente.');
+          fatal405Count = 0;
+          setTimeout(() => connectBot(), 5 * 60 * 1000);
+        } else {
+          const delay = fatal405Count * 30000; // 30s, 60s, 90s...
+          console.log('[SignaBot] Erro 405 (#' + fatal405Count + '). Aguardando ' + (delay / 1000) + 's antes de tentar novamente...');
+          setTimeout(() => connectBot(), delay);
+        }
+        return;
+      }
+
+      // Outros erros — backoff normal
       const delay = Math.min(5000 * Math.pow(2, reconnectAttempts), 60000);
       reconnectAttempts++;
       console.log('[SignaBot] Tentativa ' + reconnectAttempts + ' — reconectando em ' + (delay / 1000) + 's...');
@@ -812,8 +831,9 @@ const connectBot = async () => {
 
     } else if (connection === 'open') {
       reconnectAttempts = 0;
+      fatal405Count = 0;
       console.log('[SignaBot] Conectado com sucesso!');
-      console.log('[SignaBot] Numero do bot: ' + sock.user.id.split(':')[0]);
+      console.log('[SignaBot] Numero: ' + sock.user.id.split(':')[0]);
     } else if (connection === 'connecting') {
       console.log('[SignaBot] Conectando ao WhatsApp...');
     }
