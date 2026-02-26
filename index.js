@@ -29,7 +29,7 @@ const ytdl = require('ytdl-core');
 
 const PREFIX = '#';
 const BOT_NAME = 'SignaBot';
-const OWNER_NUMBER = '5592999652961';
+const OWNER_NUMBER = '559299652961';
 const OWNER_JIDS = [`${OWNER_NUMBER}@s.whatsapp.net`, '559299652961@s.whatsapp.net'];
 
 // Comandos que o dono pode executar mesmo com assinatura expirada
