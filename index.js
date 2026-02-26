@@ -7,6 +7,8 @@ const {
   generateWAMessageFromContent,
   proto,
   prepareWAMessageMedia,
+  fetchLatestBaileysVersion,
+  Browsers,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
@@ -388,7 +390,7 @@ wa.me/${OWNER_NUMBER}
       return reply('❌ Nenhum resultado encontrado.');
     }
     
-    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n�� Baixando áudio...`);
+    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n Baixando áudio...`);
     
     try {
       const download = await downloadYoutube(video.url, 'audio');
@@ -753,12 +755,14 @@ let reconnectAttempts = 0;
 
 const connectBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+  const { version, isLatest } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
+    version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    // Usar diferentes user agents para evitar bloqueio por fingerprint
-    browser: ['SignaBot', 'Safari', '604.1'],
+    // Usar browser padrão para evitar o erro 405
+    browser: Browsers.macOS('Desktop'),
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 30000,
