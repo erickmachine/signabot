@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { Boom } = require('@hapi/boom');
+const qrcode = require('qrcode-terminal');
 const yts = require('yt-search');
 const ytdl = require('ytdl-core');
 
@@ -387,7 +388,7 @@ wa.me/${OWNER_NUMBER}
       return reply('❌ Nenhum resultado encontrado.');
     }
     
-    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n⏳ Baixando áudio...`);
+    await reply(`🎵 *${video.title}*\n\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n�� Baixando áudio...`);
     
     try {
       const download = await downloadYoutube(video.url, 'audio');
@@ -737,29 +738,53 @@ const connectBot = async () => {
   
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,
     auth: state,
     browser: ['SignaBot', 'Chrome', '1.0.0'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 10000,
+    emitOwnEvents: false,
+    fireInitQueries: true,
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false,
+    markOnlineOnConnect: true,
   });
   
   sock.ev.on('creds.update', saveCreds);
   
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+    
+    // Exibir QR Code no terminal quando disponível
+    if (qr) {
+      console.log('\n\n==============================');
+      console.log('   Escaneie o QR Code abaixo  ');
+      console.log('==============================\n');
+      qrcode.generate(qr, { small: true });
+      console.log('\n==============================\n');
+    }
     
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error instanceof Boom)
-        ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-        : true;
+      const statusCode = (lastDisconnect?.error instanceof Boom)
+        ? lastDisconnect.error.output.statusCode
+        : 0;
       
-      console.log('Conexão fechada. Reconectando...', shouldReconnect);
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      
+      console.log(`Conexão fechada (código: ${statusCode}). Reconectando: ${shouldReconnect}`);
       
       if (shouldReconnect) {
-        connectBot();
+        // Aguardar 3 segundos antes de reconectar para evitar loop rápido
+        setTimeout(() => connectBot(), 3000);
+      } else {
+        console.log('Sessão encerrada (loggedOut). Delete a pasta auth_info_baileys e reinicie o bot.');
+        process.exit(1);
       }
     } else if (connection === 'open') {
       console.log('✅ SignaBot conectado com sucesso!');
       console.log(`📱 Número do bot: ${sock.user.id.split(':')[0]}`);
+    } else if (connection === 'connecting') {
+      console.log('🔄 Conectando ao WhatsApp...');
     }
   });
   
