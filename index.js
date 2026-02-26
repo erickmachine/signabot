@@ -225,55 +225,54 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   const settings = isGroup ? getGroupSettings(groupId) : {};
 
   // ===========================================================
-  // ASSINATURA (dono)
-  // ===========================================================
+// ASSINATURA (dono) - VERSÃO CORRIGIDA COM # E !
+// ===========================================================
 
-  if (command === '!ativar') {
-    console.log(`[!ATIVAR] Executando comando de ativação`);
-    
-    if (!ownerCheck) {
-      console.log(`[!ATIVAR] NEGADO - Não é o dono`);
-      return reply('❌ Sem permissao.');
-    }
-    
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    const days = parseInt(args[0]);
-    if (![7, 15, 30, 60, 90].includes(days)) return reply('❌ Use: !ativar [7|15|30|60|90] dias');
-    
-    const expiresAt = Date.now() + days * 86400000;
-    subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
-    saveDB('subscriptions', subscriptions);
-    
-    console.log(`[!ATIVAR] Assinatura ativada para ${groupId} até ${new Date(expiresAt).toLocaleString('pt-BR')}`);
-    
-    return reply(`✅ Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+if (command === '!ativar' || command === '#ativar') {
+  console.log(`[ATIVAR] Executando comando de ativação`);
+  
+  if (!ownerCheck) {
+    console.log(`[ATIVAR] NEGADO - Não é o dono`);
+    return reply('❌ Sem permissao.');
   }
+  
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  
+  const days = parseInt(args[0]);
+  if (![7, 15, 30, 60, 90].includes(days)) return reply('❌ Use: !ativar [7|15|30|60|90] dias');
+  
+  const expiresAt = Date.now() + days * 86400000;
+  subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
+  saveDB('subscriptions', subscriptions);
+  
+  console.log(`[ATIVAR] Assinatura ativada para ${groupId} até ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+  
+  return reply(`✅ Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+}
 
-  if (command === '!trial') {
-    if (!ownerCheck) return reply('❌ Sem permissao.');
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const mins = parseInt(args[0]) || 10;
-    subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
-    saveDB('subscriptions', subscriptions);
-    return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
-  }
+if (command === '!trial' || command === '#trial') {
+  if (!ownerCheck) return reply('❌ Sem permissao.');
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  const mins = parseInt(args[0]) || 10;
+  subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
+  saveDB('subscriptions', subscriptions);
+  return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
+}
 
-  if (command === '!cancelar') {
-    if (!ownerCheck) return reply('❌ Sem permissao.');
-    delete subscriptions[groupId];
-    saveDB('subscriptions', subscriptions);
-    return reply('✅ Assinatura cancelada.');
-  }
+if (command === '!cancelar' || command === '#cancelar') {
+  if (!ownerCheck) return reply('❌ Sem permissao.');
+  delete subscriptions[groupId];
+  saveDB('subscriptions', subscriptions);
+  return reply('✅ Assinatura cancelada.');
+}
 
-  if (command === '!status' || command === '#status') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const sub = checkSubscription(groupId);
-    if (!sub.active) return reply(`📊 Status: ${sub.reason}`);
-    const left = sub.expiresAt - Date.now();
-    return reply(`📊 *Status da Assinatura*\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
-  }
-
+if (command === '!status' || command === '#status') {
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  const sub = checkSubscription(groupId);
+  if (!sub.active) return reply(`📊 Status: ${sub.reason}`);
+  const left = sub.expiresAt - Date.now();
+  return reply(`📊 *Status da Assinatura*\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
+}
   // ===========================================================
   // MENU PRINCIPAL
   // ===========================================================
