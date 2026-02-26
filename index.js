@@ -1,7 +1,3 @@
-// ================================
-// SIGNABOT - Bot WhatsApp Completo
-// ================================
-
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -29,26 +25,46 @@ const ytdl = require('ytdl-core');
 
 const PREFIX = '#';
 const BOT_NAME = 'SignaBot';
-const OWNER_NUMBER = '5592999652961'; // Seu número sem o @s.whatsapp.net
+const OWNER_NUMBER = '5592999652961'; // SEU NÚMERO AQUI
+const BOT_NUMBER = '557183477259'; // Número do bot que aparece nos logs
 
-// ========== CORREÇÃO CRÍTICA - FUNÇÃO ISOWNER ==========
-// Verificar se usuário é dono - VERSÃO CORRIGIDA
+// Lista de JIDs que são considerados donos
+const OWNER_JIDS = [
+  `${OWNER_NUMBER}@s.whatsapp.net`,
+  `${BOT_NUMBER}@s.whatsapp.net`,
+  '212171434754106@lid', // Formato que aparece nos logs
+  '5592999652961@s.whatsapp.net'
+];
+
+// ========== FUNÇÃO ISOWNER CORRIGIDA ==========
 const isOwner = (sender) => {
-  // Extrair apenas os números do sender (remover @s.whatsapp.net e qualquer outro caractere)
-  const senderNumber = sender.split('@')[0].replace(/\D/g, '');
+  // Verificar se o sender está na lista de JIDs do dono
+  const isInList = OWNER_JIDS.includes(sender);
+  
+  // Extrair apenas números do sender
+  let senderNumber = sender.split('@')[0];
+  senderNumber = senderNumber.replace(/\D/g, '');
+  
+  // Números para comparação
   const ownerNumber = OWNER_NUMBER.replace(/\D/g, '');
+  const botNumber = BOT_NUMBER.replace(/\D/g, '');
+  
+  // Verificar se o número corresponde
+  const isNumberMatch = senderNumber === ownerNumber || senderNumber === botNumber;
   
   console.log(`[DEBUG] Verificando dono:`);
-  console.log(`[DEBUG] Sender completo: ${sender}`);
+  console.log(`[DEBUG] Sender original: ${sender}`);
   console.log(`[DEBUG] Sender número: ${senderNumber}`);
   console.log(`[DEBUG] Dono número: ${ownerNumber}`);
-  console.log(`[DEBUG] É dono? ${senderNumber === ownerNumber}`);
+  console.log(`[DEBUG] Bot número: ${botNumber}`);
+  console.log(`[DEBUG] Na lista? ${isInList}`);
+  console.log(`[DEBUG] Número match? ${isNumberMatch}`);
+  console.log(`[DEBUG] É dono? ${isInList || isNumberMatch}`);
   
-  // Verificar se o número do sender (apenas dígitos) é igual ao número do dono
-  return senderNumber === ownerNumber;
+  return isInList || isNumberMatch;
 };
 
-// Lista de comandos que o dono pode executar mesmo com assinatura expirada
+// Comandos que o dono pode executar mesmo com assinatura expirada
 const OWNER_COMMANDS = ['!ativar', '!status', '!cancelar', '!desativar', '!renovar'];
 
 // Base de dados em JSON
@@ -214,7 +230,7 @@ const downloadYoutube = async (url, type = 'audio') => {
 };
 
 // ================================
-// HANDLER DE COMANDOS - VERSÃO CORRIGIDA
+// HANDLER DE COMANDOS
 // ================================
 
 const handleCommand = async (sock, message, groupId, sender, command, args, isGroup) => {
@@ -267,7 +283,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     }
     
     if (args.length < 1) {
-      return reply('Use: !ativar [30|60] dias');
+      return reply('Use: !ativar [30|60]');
     }
     
     const days = parseInt(args[0]);
