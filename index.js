@@ -15,6 +15,7 @@ const yts = require('yt-search');
 const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
+const { createCanvas, loadImage, registerFont } = require('canvas');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -27,34 +28,29 @@ const PREFIX2 = '/';
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961';
 
-// ========== ADICIONADO: Número do bot que aparece nos logs ==========
-const BOT_NUMBER = '557183477259'; // Número do bot que aparece nos logs
+// ========== Número do bot que aparece nos logs ==========
+const BOT_NUMBER = '557183477259';
 
-// ========== CORREÇÃO: Lista de JIDs do dono com número do bot ==========
+// ========== Lista de JIDs do dono com número do bot ==========
 const OWNER_JIDS = [
   `${OWNER_NUMBER}@s.whatsapp.net`,
   '559299652961@s.whatsapp.net',
   `${BOT_NUMBER}@s.whatsapp.net`,
-  '212171434754106@lid' // Formato que aparece nos logs
+  '212171434754106@lid'
 ];
 
 // ========== FUNÇÃO ISOWNER CORRIGIDA ==========
 const isOwner = (sender) => {
-  // Verificar se o sender está na lista de JIDs do dono
   const isInList = OWNER_JIDS.includes(sender);
   
-  // Extrair apenas números do sender (remover @lid, @s.whatsapp.net, etc.)
   let senderNumber = sender.split('@')[0];
   senderNumber = senderNumber.replace(/\D/g, '');
   
-  // Números para comparação (apenas dígitos)
   const ownerNumber = OWNER_NUMBER.replace(/\D/g, '');
   const botNumber = BOT_NUMBER.replace(/\D/g, '');
   
-  // Verificar se o número corresponde ao dono ou ao bot
   const isNumberMatch = senderNumber === ownerNumber || senderNumber === botNumber;
   
-  // Log para debug
   console.log(`[DEBUG] Verificando dono:`);
   console.log(`[DEBUG] Sender original: ${sender}`);
   console.log(`[DEBUG] Sender número limpo: ${senderNumber}`);
@@ -95,10 +91,10 @@ let schedules     = loadDB('schedules');
 let notes         = loadDB('notes');
 let birthdays     = loadDB('birthdays');
 let muted         = loadDB('muted');
-let cargos        = loadDB('cargos');       // { groupId: { userId: 'admin'|'mod'|'aux' } }
-let afkList       = loadDB('afkList');      // { userId: { msg, time } }
-let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
-let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
+let cargos        = loadDB('cargos');
+let afkList       = loadDB('afkList');
+let autoMessages  = loadDB('autoMessages');
+let rules         = loadDB('rules');
 
 // ============================================================
 // HELPERS GERAIS
@@ -128,8 +124,9 @@ const getGroupSettings = (groupId) => {
       antilink: false,
       antilinkAllow: ['instagram.com', 'youtube.com', 'youtu.be', 'tiktok.com'],
       welcome: true,
-      welcomeMsg: '',
-      leaveMsg: '',
+      welcomeMsg: 'Bem-vindo(a) ao grupo, @user! 🎉',
+      welcomeImage: null,
+      leaveMsg: '👋 @user saiu do grupo.',
       antiSpam: false,
       autoBaixar: false,
       simih: false,
@@ -199,6 +196,78 @@ const downloadMedia = async (msgContent, type) => {
     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
     return buffer;
   } catch { return null; }
+};
+
+// ========== FUNÇÃO PARA CRIAR IMAGEM DE BOAS-VINDAS ==========
+const createWelcomeImage = async (userName, groupName, userTag) => {
+  try {
+    // Criar canvas 800x400
+    const canvas = createCanvas(800, 400);
+    const ctx = canvas.getContext('2d');
+
+    // Fundo gradiente
+    const gradient = ctx.createLinearGradient(0, 0, 800, 400);
+    gradient.addColorStop(0, '#667eea');
+    gradient.addColorStop(1, '#764ba2');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 800, 400);
+
+    // Adicionar padrão de fundo
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 800; i += 40) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 400, 400);
+      ctx.stroke();
+    }
+
+    // Título
+    ctx.font = 'bold 40px Arial';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText('👋 BEM-VINDO!', 400, 80);
+
+    // Nome do usuário
+    ctx.font = 'bold 36px Arial';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(userName, 400, 180);
+
+    // Mensagem
+    ctx.font = '24px Arial';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('Ao grupo:', 400, 240);
+    
+    ctx.font = 'bold 28px Arial';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(groupName, 400, 290);
+
+    // Regras básicas
+    ctx.font = '18px Arial';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText('📌 Leia as regras fixadas', 400, 340);
+    ctx.fillText('🎉 Divirta-se com o SignaBOT!', 400, 380);
+
+    // Tag do usuário
+    ctx.font = '14px Arial';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(userTag, 400, 420);
+
+    // Converter para buffer
+    const buffer = canvas.toBuffer('image/png');
+    
+    // Salvar temporariamente
+    const tempPath = path.join(__dirname, 'temp', `welcome_${Date.now()}.png`);
+    if (!fs.existsSync(path.join(__dirname, 'temp'))) {
+      fs.mkdirSync(path.join(__dirname, 'temp'), { recursive: true });
+    }
+    fs.writeFileSync(tempPath, buffer);
+    
+    return { buffer, path: tempPath };
+  } catch (err) {
+    console.log('[ERRO WELCOME IMAGE]', err);
+    return null;
+  }
 };
 
 // ============================================================
@@ -280,7 +349,7 @@ if (command === '!status' || command === '#status') {
 }
 
   // ===========================================================
-  // MENU PRINCIPAL - VERSÃO BONITA
+  // MENU PRINCIPAL
   // ===========================================================
 
   if (command === '#menu') {
@@ -430,6 +499,9 @@ if (command === '!status' || command === '#status') {
 
 ⚙️ *CONFIGURAÇÕES*
 ➤ #bemvindo [on/off]
+➤ #setwelcome [texto]
+➤ #setwelcomeimg [marcar imagem]
+➤ #setleave [texto]
 ➤ #antilink [on/off]
 ➤ #so_adm [on/off]
 ➤ #anticall [on/off]
@@ -645,7 +717,132 @@ os menus disponíveis:
   }
 
   // ===========================================================
-  // FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
+  // COMANDOS DE BOAS-VINDAS
+  // ===========================================================
+
+  // #bemvindo [on/off] - Ativar/desativar boas-vindas
+  if (command === '#bemvindo') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    if (args[0] === 'on') {
+      settings.welcome = true;
+      saveSettings();
+      return reply('✅ Boas-vindas ativadas!');
+    }
+    if (args[0] === 'off') {
+      settings.welcome = false;
+      saveSettings();
+      return reply('✅ Boas-vindas desativadas.');
+    }
+    
+    return reply(`📊 Status: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
+  }
+
+  // #setwelcome [texto] - Definir mensagem de boas-vindas (use @user para mencionar)
+  if (command === '#setwelcome') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    if (args.length === 0) {
+      return reply('❌ Use: #setwelcome [texto]\nExemplo: #setwelcome Seja bem-vindo @user! 🎉');
+    }
+    
+    settings.welcomeMsg = args.join(' ');
+    saveSettings();
+    return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
+  }
+
+  // #setwelcomeimg [marcar imagem] - Definir imagem de boas-vindas
+  if (command === '#setwelcomeimg') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    const quoted = getQuoted(message);
+    const imageMsg = quoted?.imageMessage || message.message?.imageMessage;
+    
+    if (!imageMsg) {
+      return reply('❌ Marque uma imagem para usar como fundo de boas-vindas!');
+    }
+    
+    await reply('⏳ Salvando imagem de boas-vindas...');
+    
+    try {
+      const buffer = await downloadMedia(imageMsg, 'image');
+      
+      // Salvar imagem na pasta do grupo
+      const welcomeImgDir = path.join(__dirname, 'welcome_images');
+      if (!fs.existsSync(welcomeImgDir)) {
+        fs.mkdirSync(welcomeImgDir, { recursive: true });
+      }
+      
+      const imgPath = path.join(welcomeImgDir, `${groupId.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
+      fs.writeFileSync(imgPath, buffer);
+      
+      settings.welcomeImage = imgPath;
+      saveSettings();
+      
+      return reply('✅ Imagem de boas-vindas salva com sucesso!');
+    } catch (err) {
+      console.log('[ERRO SETWELCOMEIMG]', err);
+      return reply('❌ Erro ao salvar imagem.');
+    }
+  }
+
+  // #setleave [texto] - Definir mensagem de saída
+  if (command === '#setleave') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    if (args.length === 0) {
+      return reply('❌ Use: #setleave [texto]\nExemplo: #setleave @user saiu do grupo. Até mais! 👋');
+    }
+    
+    settings.leaveMsg = args.join(' ');
+    saveSettings();
+    return reply(`✅ Mensagem de saída definida:\n\n${settings.leaveMsg}`);
+  }
+
+  // #testwelcome - Testar mensagem de boas-vindas
+  if (command === '#testwelcome') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    const userName = senderName;
+    const groupName = (await sock.groupMetadata(groupId)).subject;
+    const userTag = `@${sender.split('@')[0]}`;
+    
+    // Tentar enviar imagem personalizada
+    if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
+      const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
+      
+      // Se tiver imagem personalizada, usar ela
+      await sock.sendMessage(groupId, {
+        image: welcomeImgBuffer,
+        caption: settings.welcomeMsg.replace(/@user/g, userTag),
+        mentions: [sender]
+      }, { quoted: message });
+    } else {
+      // Criar imagem dinâmica
+      const welcomeImage = await createWelcomeImage(userName, groupName, userTag);
+      
+      if (welcomeImage) {
+        await sock.sendMessage(groupId, {
+          image: welcomeImage.buffer,
+          caption: settings.welcomeMsg.replace(/@user/g, userTag),
+          mentions: [sender]
+        }, { quoted: message });
+        
+        // Limpar arquivo temporário
+        fs.unlinkSync(welcomeImage.path);
+      } else {
+        // Fallback para texto
+        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
+        await sock.sendMessage(groupId, {
+          text: welcomeText,
+          mentions: [sender]
+        }, { quoted: message });
+      }
+    }
+  }
+
+  // ===========================================================
+  // FIGURINHAS
   // ===========================================================
 
   if (command === '#sticker' || command === '#s') {
@@ -723,10 +920,6 @@ os menus disponíveis:
       return reply('❌ Erro ao criar figurinha.')
     }
   }
-
-  // ===========================================================
-  // FIGURINHAS - TODOS OS COMANDOS
-  // ===========================================================
 
   // #fig - Atalho para criar figurinha
   if (command === '#fig') {
@@ -813,7 +1006,6 @@ os menus disponíveis:
     await reply('⏳ Criando figurinha de texto...')
 
     try {
-      // Tentar várias APIs
       const apis = [
         `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`,
         `https://api.lolhuman.xyz/api/ttp?apikey=9b817532fadff8fc7cb86862&text=${encodeURIComponent(text)}`,
@@ -888,7 +1080,6 @@ os menus disponíveis:
         return reply('❌ Erro ao baixar figurinha.')
       }
 
-      // Converter WebP para PNG usando sharp
       const pngBuffer = await sharp(buffer)
         .png()
         .toBuffer()
@@ -922,13 +1113,11 @@ os menus disponíveis:
         return reply('❌ Erro ao baixar figurinha.')
       }
 
-      // Salvar WebP temporário
       const inputPath = path.join(__dirname, `sticker_${Date.now()}.webp`)
       const outputPath = path.join(__dirname, `gif_${Date.now()}.gif`)
 
       fs.writeFileSync(inputPath, buffer)
 
-      // Converter WebP para GIF usando ffmpeg
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .outputOptions([
@@ -949,7 +1138,6 @@ os menus disponíveis:
         caption: '✅ GIF convertido com sucesso!'
       }, { quoted: message })
 
-      // Limpeza
       fs.unlinkSync(inputPath)
       fs.unlinkSync(outputPath)
 
@@ -1007,7 +1195,6 @@ os menus disponíveis:
 
       await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
 
-      // Usar API externa pois ytdl-core pode falhar em VPS
       const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`;
       const { data } = await axios.get(apiUrl, { timeout: 30000 });
       if (!data?.url) return reply('Erro ao obter link de audio.');
@@ -1166,7 +1353,7 @@ os menus disponíveis:
   }
 
   // ===========================================================
-  // ADMINISTRACAO
+  // ADMINISTRACAO (comandos existentes)
   // ===========================================================
 
   if (command === '#ban') {
@@ -1237,7 +1424,6 @@ os menus disponíveis:
     const limit = settings.warningLimit || 3;
     if (count >= limit) {
       try {
-        // Adicionar na lista negra automaticamente
         if (!blacklist[userId]) blacklist[userId] = { date: Date.now(), reason: 'Atingiu limite de advertencias' };
         saveDB('blacklist', blacklist);
         await sock.groupParticipantsUpdate(groupId, [userId], 'remove');
@@ -1405,13 +1591,6 @@ os menus disponíveis:
     return reply(`Modo so-admins: ${settings.soAdm ? 'Ativado' : 'Desativado'}\nUse: #so_adm [on/off]`);
   }
 
-  if (command === '#bemvindo') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
-    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('Boas-vindas ativadas!'); }
-    if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('Boas-vindas desativadas.'); }
-    return reply(`Boas-vindas: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
-  }
-
   if (command === '#antilink') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     if (args[0] === 'on') { settings.antilink = true; saveSettings(); return reply('Antilink ativado! Apenas Instagram, YouTube e TikTok permitidos.'); }
@@ -1540,28 +1719,26 @@ os menus disponíveis:
     return reply('Nota removida!');
   }
 
-  // SORTEIO - CORRIGIDO
-if (command === '#sorteio') {
-  try {
-    const meta = await sock.groupMetadata(groupId);
-    // Primeiro obtém o ID do bot
-    const botId = sock.user?.id;
-    // Depois faz o filtro sem usar await
-    const members = botId 
-      ? meta.participants.filter(p => p.id !== botId)
-      : meta.participants;
-    
-    if (!members.length) return reply('Nenhum membro para sortear.');
-    const winner = members[Math.floor(Math.random() * members.length)];
-    return sock.sendMessage(groupId, {
-      text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
-      mentions: [winner.id],
-    });
-  } catch (err) { 
-    console.log('[ERRO SORTEIO]', err);
-    return reply('Erro ao realizar sorteio.'); 
+  // SORTEIO
+  if (command === '#sorteio') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const botId = sock.user?.id;
+      const members = botId 
+        ? meta.participants.filter(p => p.id !== botId)
+        : meta.participants;
+      
+      if (!members.length) return reply('Nenhum membro para sortear.');
+      const winner = members[Math.floor(Math.random() * members.length)];
+      return sock.sendMessage(groupId, {
+        text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
+        mentions: [winner.id],
+      });
+    } catch (err) { 
+      console.log('[ERRO SORTEIO]', err);
+      return reply('Erro ao realizar sorteio.'); 
+    }
   }
-}
 
   // MENSAGENS AGENDADAS
   if (command === '#mensagem-automatica') {
@@ -1963,21 +2140,18 @@ const checkScheduledTimes = async (sock) => {
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
   for (const [groupId, settings] of Object.entries(groupSettings)) {
-    // Abrir grupo
     if (settings.openAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'not_announcement');
         await sock.sendMessage(groupId, { text: 'O grupo abriu automaticamente! Bom dia a todos!' });
       } catch {}
     }
-    // Fechar grupo
     if (settings.closeAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'announcement');
         await sock.sendMessage(groupId, { text: 'O grupo fechou automaticamente. Ate amanha!' });
       } catch {}
     }
-    // Mensagens automaticas
     const msgs = autoMessages[groupId];
     if (msgs && msgs.length) {
       for (const m of msgs) {
@@ -1995,7 +2169,7 @@ const checkBirthdays = async (sock) => {
   const day = now.getDate();
   const month = now.getMonth() + 1;
   const hour = now.getHours();
-  if (hour !== 9) return; // Enviar as 9h
+  if (hour !== 9) return;
 
   for (const [groupId, members] of Object.entries(birthdays)) {
     for (const [userId, b] of Object.entries(members)) {
@@ -2052,7 +2226,6 @@ const connectBot = async () => {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Agendamentos - verificar a cada 1 minuto
   const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
   const birthdayInterval = setInterval(() => checkBirthdays(sock), 3600000);
 
@@ -2131,7 +2304,6 @@ const connectBot = async () => {
         const sender = message.key.participant || message.key.remoteJid;
         const isGroup = groupId.endsWith('@g.us');
 
-        // Ignorar lista negra
         if (blacklist[sender]) {
           if (isGroup) {
             try { await sock.groupParticipantsUpdate(groupId, [sender], 'remove'); } catch {}
@@ -2139,10 +2311,8 @@ const connectBot = async () => {
           continue;
         }
 
-        // Registrar atividade
         if (isGroup) logActivity(groupId, sender);
 
-        // Verificar se membro esta mutado
         if (isGroup && muted[groupId]?.includes(sender)) {
           try {
             await sock.sendMessage(groupId, { delete: message.key });
@@ -2157,7 +2327,7 @@ const connectBot = async () => {
           subscriptions[groupId] = {
             type: 'trial',
             activatedAt: Date.now(),
-            expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
+            expiresAt: Date.now() + (10 * 60 * 1000),
             notified: false
           };
           saveDB('subscriptions', subscriptions);
@@ -2167,7 +2337,6 @@ const connectBot = async () => {
           });
         }
 
-        // Obter texto da mensagem
         const msgType = Object.keys(message.message)[0];
         let body = '';
 
@@ -2180,7 +2349,6 @@ const connectBot = async () => {
         } else if (msgType === 'videoMessage') {
           body = message.message.videoMessage.caption || '';
         } else if (msgType === 'viewOnceMessage') {
-          // Revelar view-once se ativado
           if (isGroup && settings.antiViewOnce) {
             try {
               const inner = message.message.viewOnceMessage.message;
@@ -2214,13 +2382,10 @@ const connectBot = async () => {
                   text: `@${sender.split('@')[0]}, links nao sao permitidos neste grupo!`,
                   mentions: [sender],
                 });
-
-                // Avisar se mandar link pro bot no privado
                 continue;
               }
             }
 
-            // Auto-baixar links de YouTube/TikTok/Instagram
             if (settings.autoBaixar) {
               for (const url of urls) {
                 if (url.includes('youtu')) {
@@ -2273,7 +2438,7 @@ const connectBot = async () => {
           }
         }
 
-        // VERIFICAR AFK (se mencionar alguem que esta ausente)
+        // VERIFICAR AFK
         if (isGroup && body) {
           const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           for (const uid of mentioned) {
@@ -2285,7 +2450,6 @@ const connectBot = async () => {
               });
             }
           }
-          // Se o proprio usuario que estava ausente mandou mensagem, remover AFK
           if (afkList[sender]) {
             const afk = afkList[sender];
             delete afkList[sender];
@@ -2311,7 +2475,7 @@ const connectBot = async () => {
     }
   });
 
-  // ========== VERIFICAR ASSINATURAS EXPIRADAS A CADA MINUTO ==========
+  // ========== VERIFICAR ASSINATURAS EXPIRADAS ==========
   setInterval(async () => {
     const now = Date.now();
     
@@ -2333,7 +2497,7 @@ const connectBot = async () => {
   }, 60000);
 
   // ============================================================
-  // EVENTOS DE GRUPO (entrar/sair)
+  // EVENTOS DE GRUPO (entrar/sair) - BOAS-VINDAS PERSONALIZADAS
   // ============================================================
 
   sock.ev.on('group-participants.update', async ({ id: groupId, participants, action }) => {
@@ -2343,33 +2507,58 @@ const connectBot = async () => {
 
     if (action === 'add' && settings.welcome) {
       for (const participant of participants) {
-        // Verificar lista negra
         if (blacklist[participant]) {
           try { await sock.groupParticipantsUpdate(groupId, [participant], 'remove'); } catch {}
           continue;
         }
 
-        const welcomeMsg = settings.welcomeMsg ||
-          `Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\nDigite #menu para ver os comandos disponíveis.`;
-
         try {
-          const ppUrl = await sock.profilePictureUrl(participant, 'image').catch(() => null);
-          if (ppUrl) {
+          const groupMetadata = await sock.groupMetadata(groupId);
+          const groupName = groupMetadata.subject;
+          const participantName = participant.split('@')[0];
+          const pushName = (await sock.getName(participant)) || participantName;
+          
+          // Verificar se tem imagem personalizada
+          if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
+            // Enviar imagem personalizada
+            const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
+            const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+            
             await sock.sendMessage(groupId, {
-              image: { url: ppUrl },
-              caption: welcomeMsg,
-              mentions: [participant],
+              image: welcomeImgBuffer,
+              caption: welcomeText,
+              mentions: [participant]
             });
           } else {
-            await sock.sendMessage(groupId, {
-              text: welcomeMsg,
-              mentions: [participant],
-            });
+            // Criar imagem dinâmica
+            const welcomeImage = await createWelcomeImage(pushName, groupName, `@${participantName}`);
+            
+            if (welcomeImage) {
+              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+              
+              await sock.sendMessage(groupId, {
+                image: welcomeImage.buffer,
+                caption: welcomeText,
+                mentions: [participant]
+              });
+              
+              // Limpar arquivo temporário
+              fs.unlinkSync(welcomeImage.path);
+            } else {
+              // Fallback para texto
+              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+              await sock.sendMessage(groupId, {
+                text: welcomeText,
+                mentions: [participant]
+              });
+            }
           }
-        } catch {
+        } catch (err) {
+          console.log('[ERRO WELCOME]', err);
+          // Fallback para texto simples
           await sock.sendMessage(groupId, {
-            text: welcomeMsg,
-            mentions: [participant],
+            text: `👋 Bem-vindo(a) ao grupo!`,
+            mentions: [participant]
           }).catch(() => {});
         }
       }
@@ -2378,9 +2567,10 @@ const connectBot = async () => {
     if (action === 'remove') {
       for (const participant of participants) {
         if (settings.leaveMsg) {
+          const leaveText = settings.leaveMsg.replace(/@user/g, `@${participant.split('@')[0]}`);
           await sock.sendMessage(groupId, {
-            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
-            mentions: [participant],
+            text: leaveText,
+            mentions: [participant]
           }).catch(() => {});
         }
       }
