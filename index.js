@@ -455,72 +455,70 @@ if (command === '!status' || command === '#status') {
   }
 
   // ===========================================================
-  // FIGURINHAS
-  // ===========================================================
+// FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
+// ===========================================================
 
-  if (command === '#sticker' || command === '#fig') {
-    const quoted = getQuoted(message);
-    const targetMsg = quoted?.imageMessage || quoted?.videoMessage
-      || message.message?.imageMessage || message.message?.videoMessage;
+if (command === '#sticker' || command === '#fig' || command === '#s') {
+  const quoted = getQuoted(message);
+  const targetMsg = quoted?.imageMessage || quoted?.videoMessage
+    || message.message?.imageMessage || message.message?.videoMessage;
 
-    if (!targetMsg) return reply('Marque uma imagem ou video para criar a figurinha!');
+  if (!targetMsg) return reply('❌ Marque uma imagem ou vídeo para criar a figurinha!');
 
+  try {
+    await reply('⏳ Criando figurinha...');
+    
+    const type = targetMsg === message.message?.imageMessage || quoted?.imageMessage ? 'image' : 'video';
+    const buffer = await downloadMedia(targetMsg, type);
+    
+    if (!buffer) return reply('❌ Erro ao baixar mídia.');
+    
+    // Opção 1: Tentar primeiro com API externa (mais compatível com celular)
     try {
-      const type = targetMsg === message.message?.imageMessage || quoted?.imageMessage ? 'image' : 'video';
-      const buffer = await downloadMedia(targetMsg, type);
-      if (!buffer) return reply('Erro ao baixar midia.');
-      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
-    } catch (err) { return reply('Erro ao criar figurinha: ' + err.message); }
-    return;
+      // Converter para base64
+      const base64 = buffer.toString('base64');
+      
+      // Usar API de figurinhas (várias opções)
+      const apiUrl = `https://api.xteam.xyz/sticker/maker?file=${encodeURIComponent(`data:image/jpeg;base64,${base64}`)}&author=SignaBot&pack=Figurinhas`;
+      
+      const response = await axios.get(apiUrl, { 
+        responseType: 'arraybuffer', 
+        timeout: 15000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      
+      const stickerBuffer = Buffer.from(response.data);
+      
+      await sock.sendMessage(groupId, { 
+        sticker: stickerBuffer,
+        mimetype: 'image/webp'
+      }, { quoted: message });
+      
+      return;
+    } catch (apiErr) {
+      console.log('[API STICKER ERROR]', apiErr.message);
+      
+      // Opção 2: Fallback para o método direto
+      await sock.sendMessage(groupId, { 
+        sticker: buffer,
+        mimetype: 'image/webp'
+      }, { 
+        quoted: message,
+        // Configurações adicionais para compatibilidade
+        contextInfo: {
+          participant: sender,
+          remoteJid: groupId,
+          quotedMessage: message.message
+        }
+      });
+    }
+    
+  } catch (err) { 
+    console.log('[ERRO STICKER]', err);
+    return reply('❌ Erro ao criar figurinha: ' + err.message); 
   }
-
-  if (command === '#toimg') {
-    const quoted = getQuoted(message);
-    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
-    if (!stickerMsg) return reply('Marque uma figurinha para converter em imagem!');
-    try {
-      const buffer = await downloadMedia(stickerMsg, 'sticker');
-      if (!buffer) return reply('Erro ao baixar figurinha.');
-      await sock.sendMessage(groupId, { image: buffer, caption: 'Imagem convertida' }, { quoted: message });
-    } catch (err) { return reply('Erro: ' + err.message); }
-    return;
-  }
-
-  if (command === '#togif') {
-    const quoted = getQuoted(message);
-    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
-    if (!stickerMsg) return reply('Marque uma figurinha animada para converter em GIF!');
-    try {
-      const buffer = await downloadMedia(stickerMsg, 'sticker');
-      if (!buffer) return reply('Erro ao baixar figurinha.');
-      await sock.sendMessage(groupId, { video: buffer, gifPlayback: true, caption: 'GIF convertido' }, { quoted: message });
-    } catch (err) { return reply('Erro: ' + err.message); }
-    return;
-  }
-
-  if (command === '#ttp') {
-    if (args.length === 0) return reply('Use: #ttp [texto]');
-    const text = args.join(' ');
-    try {
-      const url = `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`;
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
-      const buffer = Buffer.from(resp.data);
-      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
-    } catch { return reply('Erro ao criar figurinha de texto. Tente novamente.'); }
-    return;
-  }
-
-  if (command === '#attp') {
-    if (args.length === 0) return reply('Use: #attp [texto]');
-    const text = args.join(' ');
-    try {
-      const url = `https://api.xteam.xyz/attp?text=${encodeURIComponent(text)}`;
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
-      const buffer = Buffer.from(resp.data);
-      await sock.sendMessage(groupId, { sticker: buffer }, { quoted: message });
-    } catch { return reply('Erro ao criar figurinha animada.'); }
-    return;
-  }
+  return;
+}
 
   // ===========================================================
   // DOWNLOADS
