@@ -657,7 +657,7 @@ os menus disponíveis:
       return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
     }
 
-    await reply('⏳ Criando figurinha...')
+    await reply('⏳ Criando sua figurinha...')
 
     try {
       if (imageMsg) {
