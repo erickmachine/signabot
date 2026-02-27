@@ -1071,25 +1071,139 @@ os menus disponíveis:
     } catch { return reply('Erro na busca.'); }
   }
 
-  if (command === '#tiktok') {
-    if (args.length === 0) return reply('Use: #tiktok [URL do video]');
-    const url = args[0];
-    await reply('Baixando TikTok...');
-    try {
-      const { data } = await axios.get(
-        `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
-        { timeout: 20000 }
-      );
-      if (!data?.video?.noWatermark) return reply('Erro ao obter link do video.');
-      const videoResp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
-      const buffer = Buffer.from(videoResp.data);
-      await sock.sendMessage(groupId, {
-        video: buffer,
-        caption: data.author?.nickname ? `@${data.author.nickname}` : '',
-      }, { quoted: message });
-    } catch (err) { return reply('Erro ao baixar TikTok: ' + err.message); }
-    return;
+ // #tiktok - Baixar vídeo do TikTok (COM MÚLTIPLAS APIS DE FALLBACK)
+if (command === '#tiktok' || command === '#tt') {
+  if (args.length === 0) return reply('❌ Use: #tiktok [URL do vídeo]\nExemplo: #tiktok https://tiktok.com/@user/video/123456');
+  
+  const url = args[0];
+  
+  // Validar URL do TikTok
+  if (!url.includes('tiktok.com')) {
+    return reply('❌ URL inválida! Certifique-se de enviar um link do TikTok.');
   }
+
+  await reply('⏳ *Baixando vídeo do TikTok...*\n\nIsso pode levar alguns segundos.');
+
+  // Lista de APIs para tentar (em ordem de confiabilidade)
+  const apis = [
+    {
+      name: 'API TikDown',
+      url: `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video?.noWatermark || data?.video?.no_wm || data?.video?.[0]
+    },
+    {
+      name: 'API TikWM',
+      url: `https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.data?.play || data?.data?.wmplay
+    },
+    {
+      name: 'API TikDown2',
+      url: `https://api.tikdown.xyz/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.result?.video?.no_watermark
+    },
+    {
+      name: 'API TikMate',
+      url: `https://api.tikmate.cc/api?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video_url
+    },
+    {
+      name: 'API SSSTik',
+      url: `https://api.ssstik.io/video?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video
+    }
+  ];
+
+  // Tentar cada API
+  for (const api of apis) {
+    try {
+      console.log(`[TIKTOK] Tentando API: ${api.name}`);
+      
+      const response = await axios.get(api.url, { 
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const data = response.data;
+      const videoUrl = api.getVideo(data);
+
+      if (videoUrl) {
+        console.log(`[TIKTOK] ✅ API ${api.name} funcionou!`);
+
+        // Baixar o vídeo
+        const videoResp = await axios.get(videoUrl, { 
+          responseType: 'arraybuffer', 
+          timeout: 60000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        // Obter informações do vídeo
+        const author = data?.author?.nickname || data?.data?.author?.nickname || 'TikTok User';
+        const caption = data?.caption || data?.data?.title || 'Vídeo do TikTok';
+        const views = data?.play_count || data?.data?.play_count || '0';
+
+        // Enviar o vídeo
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: `📱 *TikTok*\n\n👤 *Autor:* ${author}\n📝 *Descrição:* ${caption}\n👁️ *Views:* ${views}\n\n✅ Download realizado com sucesso!`,
+          mentions: [sender]
+        }, { quoted: message });
+
+        return; // Sai da função se funcionou
+      }
+    } catch (err) {
+      console.log(`[TIKTOK] ❌ API ${api.name} falhou:`, err.message);
+      continue; // Tenta a próxima API
+    }
+  }
+
+  // Se todas as APIs falharem, tenta um método alternativo
+  try {
+    console.log('[TIKTOK] Tentando método alternativo...');
+    
+    // Extrair ID do vídeo da URL
+    const videoId = url.match(/\d{15,}/)?.[0] || url.match(/video\/(\d+)/)?.[1];
+    
+    if (videoId) {
+      // Usar API alternativa
+      const altUrl = `https://tiktok-video-no-watermark-download.p.rapidapi.com/tiktok?url=https://www.tiktok.com/@user/video/${videoId}`;
+      
+      const response = await axios.get(altUrl, {
+        timeout: 15000,
+        headers: {
+          'X-RapidAPI-Key': 'sua-chave-aqui', // Você precisaria de uma chave
+          'X-RapidAPI-Host': 'tiktok-video-no-watermark-download.p.rapidapi.com'
+        }
+      });
+
+      if (response.data?.videoUrl) {
+        const videoResp = await axios.get(response.data.videoUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: '📱 *TikTok*\n\n✅ Download realizado com sucesso!'
+        }, { quoted: message });
+
+        return;
+      }
+    }
+  } catch (err) {
+    console.log('[TIKTOK] ❌ Método alternativo falhou:', err.message);
+  }
+
+  // Se tudo falhar, mostrar instruções
+  return reply(`❌ *Erro ao baixar TikTok*\n\nNão foi possível baixar o vídeo no momento. As APIs estão instáveis.\n\n💡 *Sugestões:*\n1️⃣ Tente novamente mais tarde\n2️⃣ Use o comando #instagram para vídeos do Instagram\n3️⃣ Use #play para músicas do YouTube\n\n📱 *Link:* ${url}`);
+}
 
   if (command === '#instagram' || command === '#insta') {
     if (args.length === 0) return reply('Use: #instagram [URL]');
