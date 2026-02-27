@@ -15,7 +15,7 @@ const yts = require('yt-search');
 const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const { createCanvas, loadImage, registerFont } = require('canvas');
+const { createCanvas, loadImage } = require('canvas');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -201,6 +201,12 @@ const downloadMedia = async (msgContent, type) => {
 // ========== FUNÇÃO PARA CRIAR IMAGEM DE BOAS-VINDAS ==========
 const createWelcomeImage = async (userName, groupName, userTag) => {
   try {
+    // Criar pasta temp se não existir
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     // Criar canvas 800x400
     const canvas = createCanvas(800, 400);
     const ctx = canvas.getContext('2d');
@@ -257,10 +263,7 @@ const createWelcomeImage = async (userName, groupName, userTag) => {
     const buffer = canvas.toBuffer('image/png');
     
     // Salvar temporariamente
-    const tempPath = path.join(__dirname, 'temp', `welcome_${Date.now()}.png`);
-    if (!fs.existsSync(path.join(__dirname, 'temp'))) {
-      fs.mkdirSync(path.join(__dirname, 'temp'), { recursive: true });
-    }
+    const tempPath = path.join(tempDir, `welcome_${Date.now()}.png`);
     fs.writeFileSync(tempPath, buffer);
     
     return { buffer, path: tempPath };
@@ -497,11 +500,15 @@ if (command === '!status' || command === '#status') {
 ➤ #marcar [texto]
 ➤ #tagall [texto]
 
-⚙️ *CONFIGURAÇÕES*
+⚙️ *CONFIGURAÇÕES DE BOAS-VINDAS*
 ➤ #bemvindo [on/off]
 ➤ #setwelcome [texto]
-➤ #setwelcomeimg [marcar imagem]
+➤ #setwelcomeimg (marcar imagem)
 ➤ #setleave [texto]
+➤ #testwelcome
+➤ #welcomeconfig
+
+⚙️ *OUTRAS CONFIGURAÇÕES*
 ➤ #antilink [on/off]
 ➤ #so_adm [on/off]
 ➤ #anticall [on/off]
@@ -738,7 +745,7 @@ os menus disponíveis:
     return reply(`📊 Status: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
   }
 
-  // #setwelcome [texto] - Definir mensagem de boas-vindas (use @user para mencionar)
+  // #setwelcome [texto] - Definir mensagem de boas-vindas
   if (command === '#setwelcome') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
     
@@ -751,7 +758,7 @@ os menus disponíveis:
     return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
   }
 
-  // #setwelcomeimg [marcar imagem] - Definir imagem de boas-vindas
+  // #setwelcomeimg - Definir imagem de boas-vindas
   if (command === '#setwelcomeimg') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
     
@@ -767,13 +774,15 @@ os menus disponíveis:
     try {
       const buffer = await downloadMedia(imageMsg, 'image');
       
-      // Salvar imagem na pasta do grupo
+      // Criar pasta de imagens se não existir
       const welcomeImgDir = path.join(__dirname, 'welcome_images');
       if (!fs.existsSync(welcomeImgDir)) {
         fs.mkdirSync(welcomeImgDir, { recursive: true });
       }
       
-      const imgPath = path.join(welcomeImgDir, `${groupId.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
+      // Salvar imagem com nome baseado no ID do grupo
+      const safeGroupId = groupId.replace(/[^a-zA-Z0-9]/g, '_');
+      const imgPath = path.join(welcomeImgDir, `${safeGroupId}.png`);
       fs.writeFileSync(imgPath, buffer);
       
       settings.welcomeImage = imgPath;
@@ -803,28 +812,36 @@ os menus disponíveis:
   if (command === '#testwelcome') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
     
-    const userName = senderName;
-    const groupName = (await sock.groupMetadata(groupId)).subject;
-    const userTag = `@${sender.split('@')[0]}`;
-    
-    // Tentar enviar imagem personalizada
-    if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
-      const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
+    try {
+      const userName = senderName;
+      const groupMetadata = await sock.groupMetadata(groupId);
+      const groupName = groupMetadata.subject;
+      const userTag = `@${sender.split('@')[0]}`;
       
-      // Se tiver imagem personalizada, usar ela
-      await sock.sendMessage(groupId, {
-        image: welcomeImgBuffer,
-        caption: settings.welcomeMsg.replace(/@user/g, userTag),
-        mentions: [sender]
-      }, { quoted: message });
-    } else {
+      // Verificar se há imagem personalizada
+      if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
+        // Usar imagem personalizada
+        const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
+        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
+        
+        await sock.sendMessage(groupId, {
+          image: welcomeImgBuffer,
+          caption: welcomeText,
+          mentions: [sender]
+        }, { quoted: message });
+        
+        return;
+      }
+      
       // Criar imagem dinâmica
       const welcomeImage = await createWelcomeImage(userName, groupName, userTag);
       
       if (welcomeImage) {
+        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
+        
         await sock.sendMessage(groupId, {
           image: welcomeImage.buffer,
-          caption: settings.welcomeMsg.replace(/@user/g, userTag),
+          caption: welcomeText,
           mentions: [sender]
         }, { quoted: message });
         
@@ -838,7 +855,43 @@ os menus disponíveis:
           mentions: [sender]
         }, { quoted: message });
       }
+    } catch (err) {
+      console.log('[ERRO TESTWELCOME]', err);
+      return reply('❌ Erro ao testar mensagem de boas-vindas.');
     }
+  }
+
+  // #welcomeconfig - Ver configurações de boas-vindas
+  if (command === '#welcomeconfig') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
+    
+    const status = settings.welcome ? '✅ Ativado' : '❌ Desativado';
+    const msg = settings.welcomeMsg || 'Não definida (usando padrão)';
+    const leaveMsg = settings.leaveMsg || 'Não definida (usando padrão)';
+    const imgStatus = settings.welcomeImage && fs.existsSync(settings.welcomeImage) ? '✅ Configurada' : '❌ Não configurada';
+    
+    return reply(`
+╔══════════════════╗
+   📋 CONFIGURAÇÃO DE BOAS-VINDAS
+╚══════════════════╝
+
+📊 *Status:* ${status}
+
+📝 *Mensagem de boas-vindas:*
+${msg}
+
+👋 *Mensagem de saída:*
+${leaveMsg}
+
+🖼️ *Imagem personalizada:* ${imgStatus}
+
+💡 *Comandos disponíveis:*
+#setwelcome [texto]
+#setwelcomeimg (marcar imagem)
+#setleave [texto]
+#bemvindo [on/off]
+#testwelcome
+    `);
   }
 
   // ===========================================================
@@ -2515,14 +2568,14 @@ const connectBot = async () => {
         try {
           const groupMetadata = await sock.groupMetadata(groupId);
           const groupName = groupMetadata.subject;
-          const participantName = participant.split('@')[0];
-          const pushName = (await sock.getName(participant)) || participantName;
+          const participantNumber = participant.split('@')[0];
+          const pushName = await sock.getName(participant) || participantNumber;
           
           // Verificar se tem imagem personalizada
           if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
             // Enviar imagem personalizada
             const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
-            const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+            const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
             
             await sock.sendMessage(groupId, {
               image: welcomeImgBuffer,
@@ -2531,10 +2584,10 @@ const connectBot = async () => {
             });
           } else {
             // Criar imagem dinâmica
-            const welcomeImage = await createWelcomeImage(pushName, groupName, `@${participantName}`);
+            const welcomeImage = await createWelcomeImage(pushName, groupName, `@${participantNumber}`);
             
             if (welcomeImage) {
-              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
               
               await sock.sendMessage(groupId, {
                 image: welcomeImage.buffer,
@@ -2546,7 +2599,7 @@ const connectBot = async () => {
               fs.unlinkSync(welcomeImage.path);
             } else {
               // Fallback para texto
-              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantName}`);
+              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
               await sock.sendMessage(groupId, {
                 text: welcomeText,
                 mentions: [participant]
