@@ -15,7 +15,6 @@ const yts = require('yt-search');
 const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const { createCanvas, loadImage } = require('canvas');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -28,29 +27,34 @@ const PREFIX2 = '/';
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961';
 
-// ========== Número do bot que aparece nos logs ==========
-const BOT_NUMBER = '557183477259';
+// ========== ADICIONADO: Número do bot que aparece nos logs ==========
+const BOT_NUMBER = '557183477259'; // Número do bot que aparece nos logs
 
-// ========== Lista de JIDs do dono com número do bot ==========
+// ========== CORREÇÃO: Lista de JIDs do dono com número do bot ==========
 const OWNER_JIDS = [
   `${OWNER_NUMBER}@s.whatsapp.net`,
   '559299652961@s.whatsapp.net',
   `${BOT_NUMBER}@s.whatsapp.net`,
-  '212171434754106@lid'
+  '212171434754106@lid' // Formato que aparece nos logs
 ];
 
 // ========== FUNÇÃO ISOWNER CORRIGIDA ==========
 const isOwner = (sender) => {
+  // Verificar se o sender está na lista de JIDs do dono
   const isInList = OWNER_JIDS.includes(sender);
   
+  // Extrair apenas números do sender (remover @lid, @s.whatsapp.net, etc.)
   let senderNumber = sender.split('@')[0];
   senderNumber = senderNumber.replace(/\D/g, '');
   
+  // Números para comparação (apenas dígitos)
   const ownerNumber = OWNER_NUMBER.replace(/\D/g, '');
   const botNumber = BOT_NUMBER.replace(/\D/g, '');
   
+  // Verificar se o número corresponde ao dono ou ao bot
   const isNumberMatch = senderNumber === ownerNumber || senderNumber === botNumber;
   
+  // Log para debug
   console.log(`[DEBUG] Verificando dono:`);
   console.log(`[DEBUG] Sender original: ${sender}`);
   console.log(`[DEBUG] Sender número limpo: ${senderNumber}`);
@@ -91,10 +95,10 @@ let schedules     = loadDB('schedules');
 let notes         = loadDB('notes');
 let birthdays     = loadDB('birthdays');
 let muted         = loadDB('muted');
-let cargos        = loadDB('cargos');
-let afkList       = loadDB('afkList');
-let autoMessages  = loadDB('autoMessages');
-let rules         = loadDB('rules');
+let cargos        = loadDB('cargos');       // { groupId: { userId: 'admin'|'mod'|'aux' } }
+let afkList       = loadDB('afkList');      // { userId: { msg, time } }
+let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
+let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
 
 // ============================================================
 // HELPERS GERAIS
@@ -124,9 +128,8 @@ const getGroupSettings = (groupId) => {
       antilink: false,
       antilinkAllow: ['instagram.com', 'youtube.com', 'youtu.be', 'tiktok.com'],
       welcome: true,
-      welcomeMsg: 'Bem-vindo(a) ao grupo, @user! 🎉',
-      welcomeImage: null,
-      leaveMsg: '👋 @user saiu do grupo.',
+      welcomeMsg: '',
+      leaveMsg: '',
       antiSpam: false,
       autoBaixar: false,
       simih: false,
@@ -196,81 +199,6 @@ const downloadMedia = async (msgContent, type) => {
     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
     return buffer;
   } catch { return null; }
-};
-
-// ========== FUNÇÃO PARA CRIAR IMAGEM DE BOAS-VINDAS ==========
-const createWelcomeImage = async (userName, groupName, userTag) => {
-  try {
-    // Criar pasta temp se não existir
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    // Criar canvas 800x400
-    const canvas = createCanvas(800, 400);
-    const ctx = canvas.getContext('2d');
-
-    // Fundo gradiente
-    const gradient = ctx.createLinearGradient(0, 0, 800, 400);
-    gradient.addColorStop(0, '#667eea');
-    gradient.addColorStop(1, '#764ba2');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 800, 400);
-
-    // Adicionar padrão de fundo
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 800; i += 40) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i + 400, 400);
-      ctx.stroke();
-    }
-
-    // Título
-    ctx.font = 'bold 40px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.fillText('👋 BEM-VINDO!', 400, 80);
-
-    // Nome do usuário
-    ctx.font = 'bold 36px Arial';
-    ctx.fillStyle = '#ffd700';
-    ctx.fillText(userName, 400, 180);
-
-    // Mensagem
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Ao grupo:', 400, 240);
-    
-    ctx.font = 'bold 28px Arial';
-    ctx.fillStyle = '#ffd700';
-    ctx.fillText(groupName, 400, 290);
-
-    // Regras básicas
-    ctx.font = '18px Arial';
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText('📌 Leia as regras fixadas', 400, 340);
-    ctx.fillText('🎉 Divirta-se com o SignaBOT!', 400, 380);
-
-    // Tag do usuário
-    ctx.font = '14px Arial';
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(userTag, 400, 420);
-
-    // Converter para buffer
-    const buffer = canvas.toBuffer('image/png');
-    
-    // Salvar temporariamente
-    const tempPath = path.join(tempDir, `welcome_${Date.now()}.png`);
-    fs.writeFileSync(tempPath, buffer);
-    
-    return { buffer, path: tempPath };
-  } catch (err) {
-    console.log('[ERRO WELCOME IMAGE]', err);
-    return null;
-  }
 };
 
 // ============================================================
@@ -352,7 +280,7 @@ if (command === '!status' || command === '#status') {
 }
 
   // ===========================================================
-  // MENU PRINCIPAL
+  // MENU PRINCIPAL - VERSÃO BONITA
   // ===========================================================
 
   if (command === '#menu') {
@@ -500,15 +428,8 @@ if (command === '!status' || command === '#status') {
 ➤ #marcar [texto]
 ➤ #tagall [texto]
 
-⚙️ *CONFIGURAÇÕES DE BOAS-VINDAS*
+⚙️ *CONFIGURAÇÕES*
 ➤ #bemvindo [on/off]
-➤ #setwelcome [texto]
-➤ #setwelcomeimg (marcar imagem)
-➤ #setleave [texto]
-➤ #testwelcome
-➤ #welcomeconfig
-
-⚙️ *OUTRAS CONFIGURAÇÕES*
 ➤ #antilink [on/off]
 ➤ #so_adm [on/off]
 ➤ #anticall [on/off]
@@ -724,178 +645,7 @@ os menus disponíveis:
   }
 
   // ===========================================================
-  // COMANDOS DE BOAS-VINDAS
-  // ===========================================================
-
-  // #bemvindo [on/off] - Ativar/desativar boas-vindas
-  if (command === '#bemvindo') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    if (args[0] === 'on') {
-      settings.welcome = true;
-      saveSettings();
-      return reply('✅ Boas-vindas ativadas!');
-    }
-    if (args[0] === 'off') {
-      settings.welcome = false;
-      saveSettings();
-      return reply('✅ Boas-vindas desativadas.');
-    }
-    
-    return reply(`📊 Status: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
-  }
-
-  // #setwelcome [texto] - Definir mensagem de boas-vindas
-  if (command === '#setwelcome') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    if (args.length === 0) {
-      return reply('❌ Use: #setwelcome [texto]\nExemplo: #setwelcome Seja bem-vindo @user! 🎉');
-    }
-    
-    settings.welcomeMsg = args.join(' ');
-    saveSettings();
-    return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
-  }
-
-  // #setwelcomeimg - Definir imagem de boas-vindas
-  if (command === '#setwelcomeimg') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    const quoted = getQuoted(message);
-    const imageMsg = quoted?.imageMessage || message.message?.imageMessage;
-    
-    if (!imageMsg) {
-      return reply('❌ Marque uma imagem para usar como fundo de boas-vindas!');
-    }
-    
-    await reply('⏳ Salvando imagem de boas-vindas...');
-    
-    try {
-      const buffer = await downloadMedia(imageMsg, 'image');
-      
-      // Criar pasta de imagens se não existir
-      const welcomeImgDir = path.join(__dirname, 'welcome_images');
-      if (!fs.existsSync(welcomeImgDir)) {
-        fs.mkdirSync(welcomeImgDir, { recursive: true });
-      }
-      
-      // Salvar imagem com nome baseado no ID do grupo
-      const safeGroupId = groupId.replace(/[^a-zA-Z0-9]/g, '_');
-      const imgPath = path.join(welcomeImgDir, `${safeGroupId}.png`);
-      fs.writeFileSync(imgPath, buffer);
-      
-      settings.welcomeImage = imgPath;
-      saveSettings();
-      
-      return reply('✅ Imagem de boas-vindas salva com sucesso!');
-    } catch (err) {
-      console.log('[ERRO SETWELCOMEIMG]', err);
-      return reply('❌ Erro ao salvar imagem.');
-    }
-  }
-
-  // #setleave [texto] - Definir mensagem de saída
-  if (command === '#setleave') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    if (args.length === 0) {
-      return reply('❌ Use: #setleave [texto]\nExemplo: #setleave @user saiu do grupo. Até mais! 👋');
-    }
-    
-    settings.leaveMsg = args.join(' ');
-    saveSettings();
-    return reply(`✅ Mensagem de saída definida:\n\n${settings.leaveMsg}`);
-  }
-
-  // #testwelcome - Testar mensagem de boas-vindas
-  if (command === '#testwelcome') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    try {
-      const userName = senderName;
-      const groupMetadata = await sock.groupMetadata(groupId);
-      const groupName = groupMetadata.subject;
-      const userTag = `@${sender.split('@')[0]}`;
-      
-      // Verificar se há imagem personalizada
-      if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
-        // Usar imagem personalizada
-        const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
-        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
-        
-        await sock.sendMessage(groupId, {
-          image: welcomeImgBuffer,
-          caption: welcomeText,
-          mentions: [sender]
-        }, { quoted: message });
-        
-        return;
-      }
-      
-      // Criar imagem dinâmica
-      const welcomeImage = await createWelcomeImage(userName, groupName, userTag);
-      
-      if (welcomeImage) {
-        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
-        
-        await sock.sendMessage(groupId, {
-          image: welcomeImage.buffer,
-          caption: welcomeText,
-          mentions: [sender]
-        }, { quoted: message });
-        
-        // Limpar arquivo temporário
-        fs.unlinkSync(welcomeImage.path);
-      } else {
-        // Fallback para texto
-        const welcomeText = settings.welcomeMsg.replace(/@user/g, userTag);
-        await sock.sendMessage(groupId, {
-          text: welcomeText,
-          mentions: [sender]
-        }, { quoted: message });
-      }
-    } catch (err) {
-      console.log('[ERRO TESTWELCOME]', err);
-      return reply('❌ Erro ao testar mensagem de boas-vindas.');
-    }
-  }
-
-  // #welcomeconfig - Ver configurações de boas-vindas
-  if (command === '#welcomeconfig') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissao.');
-    
-    const status = settings.welcome ? '✅ Ativado' : '❌ Desativado';
-    const msg = settings.welcomeMsg || 'Não definida (usando padrão)';
-    const leaveMsg = settings.leaveMsg || 'Não definida (usando padrão)';
-    const imgStatus = settings.welcomeImage && fs.existsSync(settings.welcomeImage) ? '✅ Configurada' : '❌ Não configurada';
-    
-    return reply(`
-╔══════════════════╗
-   📋 CONFIGURAÇÃO DE BOAS-VINDAS
-╚══════════════════╝
-
-📊 *Status:* ${status}
-
-📝 *Mensagem de boas-vindas:*
-${msg}
-
-👋 *Mensagem de saída:*
-${leaveMsg}
-
-🖼️ *Imagem personalizada:* ${imgStatus}
-
-💡 *Comandos disponíveis:*
-#setwelcome [texto]
-#setwelcomeimg (marcar imagem)
-#setleave [texto]
-#bemvindo [on/off]
-#testwelcome
-    `);
-  }
-
-  // ===========================================================
-  // FIGURINHAS
+  // FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
   // ===========================================================
 
   if (command === '#sticker' || command === '#s') {
@@ -973,6 +723,10 @@ ${leaveMsg}
       return reply('❌ Erro ao criar figurinha.')
     }
   }
+
+  // ===========================================================
+  // FIGURINHAS - TODOS OS COMANDOS
+  // ===========================================================
 
   // #fig - Atalho para criar figurinha
   if (command === '#fig') {
@@ -1059,6 +813,7 @@ ${leaveMsg}
     await reply('⏳ Criando figurinha de texto...')
 
     try {
+      // Tentar várias APIs
       const apis = [
         `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`,
         `https://api.lolhuman.xyz/api/ttp?apikey=9b817532fadff8fc7cb86862&text=${encodeURIComponent(text)}`,
@@ -1133,6 +888,7 @@ ${leaveMsg}
         return reply('❌ Erro ao baixar figurinha.')
       }
 
+      // Converter WebP para PNG usando sharp
       const pngBuffer = await sharp(buffer)
         .png()
         .toBuffer()
@@ -1166,11 +922,13 @@ ${leaveMsg}
         return reply('❌ Erro ao baixar figurinha.')
       }
 
+      // Salvar WebP temporário
       const inputPath = path.join(__dirname, `sticker_${Date.now()}.webp`)
       const outputPath = path.join(__dirname, `gif_${Date.now()}.gif`)
 
       fs.writeFileSync(inputPath, buffer)
 
+      // Converter WebP para GIF usando ffmpeg
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .outputOptions([
@@ -1191,6 +949,7 @@ ${leaveMsg}
         caption: '✅ GIF convertido com sucesso!'
       }, { quoted: message })
 
+      // Limpeza
       fs.unlinkSync(inputPath)
       fs.unlinkSync(outputPath)
 
@@ -1234,210 +993,180 @@ ${leaveMsg}
   }
 
   // ===========================================================
-// DOWNLOADS - VERSÃO PROFISSIONAL MELHORADA
-// ===========================================================
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const COOLDOWN_TIME = 15000; // 15 segundos
-const downloadCooldown = new Map();
-
-// =======================
-// Função Anti-Spam
-// =======================
-function checkCooldown(groupId) {
-  const now = Date.now();
-  const lastUse = downloadCooldown.get(groupId) || 0;
-
-  if (now - lastUse < COOLDOWN_TIME) {
-    return true;
-  }
-
-  downloadCooldown.set(groupId, now);
-  return false;
-}
-
-// =======================
-// Função para baixar com limite
-// =======================
-async function downloadWithLimit(url, timeout = 60000) {
-  const response = await axios.get(url, {
-    responseType: 'arraybuffer',
-    timeout,
-    headers: { 'User-Agent': 'Mozilla/5.0' }
-  });
-
-  const size = parseInt(response.headers['content-length'] || 0);
-
-  if (size > MAX_FILE_SIZE) {
-    throw new Error('Arquivo muito grande (máx 50MB).');
-  }
-
-  return Buffer.from(response.data);
-}
-
-// =======================
-// #PLAY / #YTMP3
-// =======================
-if (command === '#play' || command === '#ytmp3') {
-
-  if (checkCooldown(groupId))
-    return reply('⏳ Aguarde alguns segundos antes de usar novamente.');
-
-  if (!args.length)
-    return reply('❌ Use: #play [nome ou URL da música]');
-
-  const query = args.join(' ');
-  await reply(`🔍 Buscando: ${query}`);
-
-  try {
-    const results = await yts(query);
-    const video = results.videos[0];
-    if (!video) return reply('❌ Nenhum resultado encontrado.');
-
-    if (video.seconds > 1800)
-      return reply('❌ Música muito longa (máx 30 minutos).');
-
-    await reply(`🎵 ${video.title}\n⏱ ${video.timestamp}\n⏳ Baixando áudio...`);
-
-    const apis = [
-      `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`,
-      `https://api.lolhuman.xyz/api/ytaudio?apikey=SUAKEY&url=${encodeURIComponent(video.url)}`,
-      `https://api.ashiq.dev/api/ytdl?url=${encodeURIComponent(video.url)}&type=audio`
-    ];
-
-    let buffer = null;
-
-    for (const apiUrl of apis) {
-      try {
-        const { data } = await axios.get(apiUrl, { timeout: 15000 });
-        const mediaUrl = data?.url || data?.result?.url;
-        if (!mediaUrl) continue;
-
-        buffer = await downloadWithLimit(mediaUrl);
-        break;
-      } catch (e) {
-        console.log('[PLAY API FAIL]', e.message);
-      }
-    }
-
-    if (!buffer)
-      return reply('❌ Todas APIs falharam. Tente novamente.');
-
-    await sock.sendMessage(groupId, {
-      audio: buffer,
-      mimetype: 'audio/mpeg',
-      ptt: false
-    }, { quoted: message });
-
-    await sock.sendMessage(groupId, {
-      image: { url: video.thumbnail },
-      caption: `🎵 ${video.title}\n⏱ ${video.timestamp}\n✅ Download concluído`
-    }, { quoted: message });
-
-  } catch (err) {
-    console.log('[PLAY ERROR]', err);
-    return reply('❌ Erro: ' + err.message);
-  }
-
-  return;
-}
-
-// =======================
-// #PLAYVIDEO / #YTMP4
-// =======================
-if (command === '#playvideo' || command === '#ytmp4') {
-
-  if (checkCooldown(groupId))
-    return reply('⏳ Aguarde alguns segundos.');
-
-  if (!args.length)
-    return reply('❌ Use: #playvideo [nome ou URL]');
-
-  const query = args.join(' ');
-  await reply(`🔍 Buscando: ${query}`);
-
-  try {
-    const results = await yts(query);
-    const video = results.videos[0];
-    if (!video) return reply('❌ Nenhum resultado.');
-
-    if (video.seconds > 600)
-      return reply('❌ Vídeo muito longo (máx 10 minutos).');
-
-    await reply(`🎬 ${video.title}\n⏳ Baixando vídeo...`);
-
-    const apis = [
-      `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`,
-      `https://api.lolhuman.xyz/api/ytvideo?apikey=SUAKEY&url=${encodeURIComponent(video.url)}`,
-      `https://api.ashiq.dev/api/ytdl?url=${encodeURIComponent(video.url)}&type=video`
-    ];
-
-    let buffer = null;
-
-    for (const apiUrl of apis) {
-      try {
-        const { data } = await axios.get(apiUrl, { timeout: 15000 });
-        const mediaUrl = data?.url || data?.result?.url;
-        if (!mediaUrl) continue;
-
-        buffer = await downloadWithLimit(mediaUrl, 120000);
-        break;
-      } catch (e) {
-        console.log('[VIDEO API FAIL]', e.message);
-      }
-    }
-
-    if (!buffer)
-      return reply('❌ Todas APIs falharam.');
-
-    await sock.sendMessage(groupId, {
-      video: buffer,
-      caption: `🎬 ${video.title}\n⏱ ${video.timestamp}\n✅ Download concluído`
-    }, { quoted: message });
-
-  } catch (err) {
-    console.log('[VIDEO ERROR]', err);
-    return reply('❌ Erro: ' + err.message);
-  }
-
-  return;
-}
-
-// =======================
-// #YTSEARCH
-// =======================
-if (command === '#ytsearch') {
-
-  if (!args.length)
-    return reply('❌ Use: #ytsearch [busca]');
-
-  const query = args.join(' ');
-  await reply(`🔍 Buscando: ${query}`);
-
-  try {
-    const results = await yts(query);
-    const videos = results.videos.slice(0, 5);
-
-    if (!videos.length)
-      return reply('❌ Nenhum resultado.');
-
-    let text = '📺 *RESULTADOS DO YOUTUBE*\n\n';
-
-    videos.forEach((v, i) => {
-      text += `${i + 1}. *${v.title}*\n`;
-      text += `⏱ ${v.timestamp} | 👁 ${v.views}\n`;
-      text += `${v.url}\n\n`;
-    });
-
-    return reply(text);
-
-  } catch (err) {
-    console.log('[YTSEARCH ERROR]', err);
-    return reply('❌ Erro na busca.');
-  }
-}
+  // DOWNLOADS
   // ===========================================================
-  // ADMINISTRACAO (comandos existentes)
+
+  if (command === '#play' || command === '#ytmp3') {
+    if (args.length === 0) return reply('Use: #play [nome ou URL da musica]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
+
+      // Usar API externa pois ytdl-core pode falhar em VPS
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de audio.');
+
+      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(audioResp.data);
+
+      await sock.sendMessage(groupId, {
+        audio: buffer,
+        mimetype: 'audio/mpeg',
+        ptt: false,
+      }, { quoted: message });
+
+      await sock.sendMessage(groupId, {
+        image: { url: video.thumbnail },
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}\nViews: ${video.views}`,
+      });
+    } catch (err) { return reply('Erro ao baixar audio: ' + err.message); }
+    return;
+  }
+
+  if (command === '#playvideo' || command === '#ytmp4') {
+    if (args.length === 0) return reply('Use: #playvideo [nome ou URL]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      if (video.seconds > 600) return reply('Video muito longo (max 10 minutos).');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
+
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de video.');
+
+      const videoResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 120000 });
+      const buffer = Buffer.from(videoResp.data);
+
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}`,
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar video: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ytsearch') {
+    if (args.length === 0) return reply('Use: #ytsearch [busca]');
+    try {
+      const results = await yts(args.join(' '));
+      const videos = results.videos.slice(0, 5);
+      if (!videos.length) return reply('Nenhum resultado.');
+      let text = '*Resultados no YouTube:*\n\n';
+      videos.forEach((v, i) => {
+        text += `${i + 1}. *${v.title}*\nDuracao: ${v.timestamp}\nURL: ${v.url}\n\n`;
+      });
+      return reply(text);
+    } catch { return reply('Erro na busca.'); }
+  }
+
+  if (command === '#tiktok') {
+    if (args.length === 0) return reply('Use: #tiktok [URL do video]');
+    const url = args[0];
+    await reply('Baixando TikTok...');
+    try {
+      const { data } = await axios.get(
+        `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.video?.noWatermark) return reply('Erro ao obter link do video.');
+      const videoResp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(videoResp.data);
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: data.author?.nickname ? `@${data.author.nickname}` : '',
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar TikTok: ' + err.message); }
+    return;
+  }
+
+  if (command === '#instagram' || command === '#insta') {
+    if (args.length === 0) return reply('Use: #instagram [URL]');
+    const url = args[0];
+    await reply('Baixando Instagram...');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.url) return reply('Erro ao baixar. Verifique se o link e valido e o perfil e publico.');
+      const mediaResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(mediaResp.data);
+      const isVideo = data.type === 'video';
+      if (isVideo) {
+        await sock.sendMessage(groupId, { video: buffer, caption: 'Instagram' }, { quoted: message });
+      } else {
+        await sock.sendMessage(groupId, { image: buffer, caption: 'Instagram' }, { quoted: message });
+      }
+    } catch (err) { return reply('Erro ao baixar Instagram: ' + err.message); }
+    return;
+  }
+
+  if (command === '#pinterest') {
+    if (args.length === 0) return reply('Use: #pinterest [busca]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/pinterest?search=${encodeURIComponent(query)}`,
+        { timeout: 15000 }
+      );
+      if (!data?.result?.length) return reply('Nenhuma imagem encontrada.');
+      const img = data.result[Math.floor(Math.random() * Math.min(data.result.length, 5))];
+      await sock.sendMessage(groupId, { image: { url: img }, caption: `Pinterest: ${query}` }, { quoted: message });
+    } catch { return reply('Erro ao buscar no Pinterest.'); }
+    return;
+  }
+
+  if (command === '#letra') {
+    if (args.length === 0) return reply('Use: #letra [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.vagalume.com.br/search.php?q=${encodeURIComponent(query)}&apikey=09f9e8f8`,
+        { timeout: 10000 }
+      );
+      if (data.type === 'notfound') return reply('Letra nao encontrada.');
+      const music = data.response?.docs?.[0];
+      if (!music) return reply('Letra nao encontrada.');
+      const letra = music.text.substring(0, 1500);
+      return reply(`*${music.band.name} - ${music.name}*\n\n${letra}${music.text.length > 1500 ? '\n\n[Continua...]' : ''}`);
+    } catch { return reply('Erro ao buscar letra.'); }
+  }
+
+  if (command === '#spotify') {
+    if (args.length === 0) return reply('Use: #spotify [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=1`,
+        { timeout: 10000 }
+      );
+      const song = data?.data?.results?.[0];
+      if (!song) return reply('Musica nao encontrada.');
+      return reply(`*${song.name}*\nArtista: ${song.artists?.primary?.map(a => a.name).join(', ') || '-'}\nAlbum: ${song.album?.name || '-'}\nDuracao: ${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, '0')}`);
+    } catch { return reply('Erro ao buscar no Spotify.'); }
+  }
+
+  if (command === '#autobaixar') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.autoBaixar = true; saveSettings(); return reply('Auto-baixar ativado! Links de YouTube, TikTok e Instagram serao baixados automaticamente.'); }
+    if (args[0] === 'off') { settings.autoBaixar = false; saveSettings(); return reply('Auto-baixar desativado.'); }
+    return reply(`Auto-baixar: ${settings.autoBaixar ? 'Ativado' : 'Desativado'}\nUse: #autobaixar [on/off]`);
+  }
+
+  // ===========================================================
+  // ADMINISTRACAO
   // ===========================================================
 
   if (command === '#ban') {
@@ -1508,6 +1237,7 @@ if (command === '#ytsearch') {
     const limit = settings.warningLimit || 3;
     if (count >= limit) {
       try {
+        // Adicionar na lista negra automaticamente
         if (!blacklist[userId]) blacklist[userId] = { date: Date.now(), reason: 'Atingiu limite de advertencias' };
         saveDB('blacklist', blacklist);
         await sock.groupParticipantsUpdate(groupId, [userId], 'remove');
@@ -1675,6 +1405,13 @@ if (command === '#ytsearch') {
     return reply(`Modo so-admins: ${settings.soAdm ? 'Ativado' : 'Desativado'}\nUse: #so_adm [on/off]`);
   }
 
+  if (command === '#bemvindo') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('Boas-vindas ativadas!'); }
+    if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('Boas-vindas desativadas.'); }
+    return reply(`Boas-vindas: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
+  }
+
   if (command === '#antilink') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     if (args[0] === 'on') { settings.antilink = true; saveSettings(); return reply('Antilink ativado! Apenas Instagram, YouTube e TikTok permitidos.'); }
@@ -1803,26 +1540,28 @@ if (command === '#ytsearch') {
     return reply('Nota removida!');
   }
 
-  // SORTEIO
-  if (command === '#sorteio') {
-    try {
-      const meta = await sock.groupMetadata(groupId);
-      const botId = sock.user?.id;
-      const members = botId 
-        ? meta.participants.filter(p => p.id !== botId)
-        : meta.participants;
-      
-      if (!members.length) return reply('Nenhum membro para sortear.');
-      const winner = members[Math.floor(Math.random() * members.length)];
-      return sock.sendMessage(groupId, {
-        text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
-        mentions: [winner.id],
-      });
-    } catch (err) { 
-      console.log('[ERRO SORTEIO]', err);
-      return reply('Erro ao realizar sorteio.'); 
-    }
+  // SORTEIO - CORRIGIDO
+if (command === '#sorteio') {
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    // Primeiro obtém o ID do bot
+    const botId = sock.user?.id;
+    // Depois faz o filtro sem usar await
+    const members = botId 
+      ? meta.participants.filter(p => p.id !== botId)
+      : meta.participants;
+    
+    if (!members.length) return reply('Nenhum membro para sortear.');
+    const winner = members[Math.floor(Math.random() * members.length)];
+    return sock.sendMessage(groupId, {
+      text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
+      mentions: [winner.id],
+    });
+  } catch (err) { 
+    console.log('[ERRO SORTEIO]', err);
+    return reply('Erro ao realizar sorteio.'); 
   }
+}
 
   // MENSAGENS AGENDADAS
   if (command === '#mensagem-automatica') {
@@ -2224,18 +1963,21 @@ const checkScheduledTimes = async (sock) => {
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
   for (const [groupId, settings] of Object.entries(groupSettings)) {
+    // Abrir grupo
     if (settings.openAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'not_announcement');
         await sock.sendMessage(groupId, { text: 'O grupo abriu automaticamente! Bom dia a todos!' });
       } catch {}
     }
+    // Fechar grupo
     if (settings.closeAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'announcement');
         await sock.sendMessage(groupId, { text: 'O grupo fechou automaticamente. Ate amanha!' });
       } catch {}
     }
+    // Mensagens automaticas
     const msgs = autoMessages[groupId];
     if (msgs && msgs.length) {
       for (const m of msgs) {
@@ -2253,7 +1995,7 @@ const checkBirthdays = async (sock) => {
   const day = now.getDate();
   const month = now.getMonth() + 1;
   const hour = now.getHours();
-  if (hour !== 9) return;
+  if (hour !== 9) return; // Enviar as 9h
 
   for (const [groupId, members] of Object.entries(birthdays)) {
     for (const [userId, b] of Object.entries(members)) {
@@ -2310,6 +2052,7 @@ const connectBot = async () => {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Agendamentos - verificar a cada 1 minuto
   const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
   const birthdayInterval = setInterval(() => checkBirthdays(sock), 3600000);
 
@@ -2388,6 +2131,7 @@ const connectBot = async () => {
         const sender = message.key.participant || message.key.remoteJid;
         const isGroup = groupId.endsWith('@g.us');
 
+        // Ignorar lista negra
         if (blacklist[sender]) {
           if (isGroup) {
             try { await sock.groupParticipantsUpdate(groupId, [sender], 'remove'); } catch {}
@@ -2395,8 +2139,10 @@ const connectBot = async () => {
           continue;
         }
 
+        // Registrar atividade
         if (isGroup) logActivity(groupId, sender);
 
+        // Verificar se membro esta mutado
         if (isGroup && muted[groupId]?.includes(sender)) {
           try {
             await sock.sendMessage(groupId, { delete: message.key });
@@ -2411,7 +2157,7 @@ const connectBot = async () => {
           subscriptions[groupId] = {
             type: 'trial',
             activatedAt: Date.now(),
-            expiresAt: Date.now() + (10 * 60 * 1000),
+            expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
             notified: false
           };
           saveDB('subscriptions', subscriptions);
@@ -2421,6 +2167,7 @@ const connectBot = async () => {
           });
         }
 
+        // Obter texto da mensagem
         const msgType = Object.keys(message.message)[0];
         let body = '';
 
@@ -2433,6 +2180,7 @@ const connectBot = async () => {
         } else if (msgType === 'videoMessage') {
           body = message.message.videoMessage.caption || '';
         } else if (msgType === 'viewOnceMessage') {
+          // Revelar view-once se ativado
           if (isGroup && settings.antiViewOnce) {
             try {
               const inner = message.message.viewOnceMessage.message;
@@ -2466,10 +2214,13 @@ const connectBot = async () => {
                   text: `@${sender.split('@')[0]}, links nao sao permitidos neste grupo!`,
                   mentions: [sender],
                 });
+
+                // Avisar se mandar link pro bot no privado
                 continue;
               }
             }
 
+            // Auto-baixar links de YouTube/TikTok/Instagram
             if (settings.autoBaixar) {
               for (const url of urls) {
                 if (url.includes('youtu')) {
@@ -2522,7 +2273,7 @@ const connectBot = async () => {
           }
         }
 
-        // VERIFICAR AFK
+        // VERIFICAR AFK (se mencionar alguem que esta ausente)
         if (isGroup && body) {
           const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           for (const uid of mentioned) {
@@ -2534,6 +2285,7 @@ const connectBot = async () => {
               });
             }
           }
+          // Se o proprio usuario que estava ausente mandou mensagem, remover AFK
           if (afkList[sender]) {
             const afk = afkList[sender];
             delete afkList[sender];
@@ -2559,7 +2311,7 @@ const connectBot = async () => {
     }
   });
 
-  // ========== VERIFICAR ASSINATURAS EXPIRADAS ==========
+  // ========== VERIFICAR ASSINATURAS EXPIRADAS A CADA MINUTO ==========
   setInterval(async () => {
     const now = Date.now();
     
@@ -2581,7 +2333,7 @@ const connectBot = async () => {
   }, 60000);
 
   // ============================================================
-  // EVENTOS DE GRUPO (entrar/sair) - BOAS-VINDAS PERSONALIZADAS
+  // EVENTOS DE GRUPO (entrar/sair)
   // ============================================================
 
   sock.ev.on('group-participants.update', async ({ id: groupId, participants, action }) => {
@@ -2591,58 +2343,33 @@ const connectBot = async () => {
 
     if (action === 'add' && settings.welcome) {
       for (const participant of participants) {
+        // Verificar lista negra
         if (blacklist[participant]) {
           try { await sock.groupParticipantsUpdate(groupId, [participant], 'remove'); } catch {}
           continue;
         }
 
+        const welcomeMsg = settings.welcomeMsg ||
+          `Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\nDigite #menu para ver os comandos disponíveis.`;
+
         try {
-          const groupMetadata = await sock.groupMetadata(groupId);
-          const groupName = groupMetadata.subject;
-          const participantNumber = participant.split('@')[0];
-          const pushName = await sock.getName(participant) || participantNumber;
-          
-          // Verificar se tem imagem personalizada
-          if (settings.welcomeImage && fs.existsSync(settings.welcomeImage)) {
-            // Enviar imagem personalizada
-            const welcomeImgBuffer = fs.readFileSync(settings.welcomeImage);
-            const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
-            
+          const ppUrl = await sock.profilePictureUrl(participant, 'image').catch(() => null);
+          if (ppUrl) {
             await sock.sendMessage(groupId, {
-              image: welcomeImgBuffer,
-              caption: welcomeText,
-              mentions: [participant]
+              image: { url: ppUrl },
+              caption: welcomeMsg,
+              mentions: [participant],
             });
           } else {
-            // Criar imagem dinâmica
-            const welcomeImage = await createWelcomeImage(pushName, groupName, `@${participantNumber}`);
-            
-            if (welcomeImage) {
-              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
-              
-              await sock.sendMessage(groupId, {
-                image: welcomeImage.buffer,
-                caption: welcomeText,
-                mentions: [participant]
-              });
-              
-              // Limpar arquivo temporário
-              fs.unlinkSync(welcomeImage.path);
-            } else {
-              // Fallback para texto
-              const welcomeText = settings.welcomeMsg.replace(/@user/g, `@${participantNumber}`);
-              await sock.sendMessage(groupId, {
-                text: welcomeText,
-                mentions: [participant]
-              });
-            }
+            await sock.sendMessage(groupId, {
+              text: welcomeMsg,
+              mentions: [participant],
+            });
           }
-        } catch (err) {
-          console.log('[ERRO WELCOME]', err);
-          // Fallback para texto simples
+        } catch {
           await sock.sendMessage(groupId, {
-            text: `👋 Bem-vindo(a) ao grupo @user !`,
-            mentions: [participant]
+            text: welcomeMsg,
+            mentions: [participant],
           }).catch(() => {});
         }
       }
@@ -2651,10 +2378,9 @@ const connectBot = async () => {
     if (action === 'remove') {
       for (const participant of participants) {
         if (settings.leaveMsg) {
-          const leaveText = settings.leaveMsg.replace(/@user/g, `@${participant.split('@')[0]}`);
           await sock.sendMessage(groupId, {
-            text: leaveText,
-            mentions: [participant]
+            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
+            mentions: [participant],
           }).catch(() => {});
         }
       }
