@@ -993,181 +993,178 @@ os menus disponíveis:
   }
 
   // ===========================================================
-// DOWNLOADS - TODAS AS FUNÇÕES CORRIGIDAS
-// ===========================================================
+  // DOWNLOADS
+  // ===========================================================
 
-// #play / #ytmp3 - Baixar áudio do YouTube
-if (command === '#play' || command === '#ytmp3') {
-  if (args.length === 0) return reply('❌ Use: #play [nome ou URL da música]\nExemplo: #play shape of you');
-  
-  const query = args.join(' ');
-  await reply(`🔍 *Buscando:* ${query}`);
+  if (command === '#play' || command === '#ytmp3') {
+    if (args.length === 0) return reply('Use: #play [nome ou URL da musica]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
 
-  try {
-    // Buscar no YouTube
-    const results = await yts(query);
-    const video = results.videos[0];
-    
-    if (!video) return reply('❌ Nenhum resultado encontrado.');
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
 
-    await reply(`🎵 *Música encontrada!*\n\n📌 *Título:* ${video.title}\n⏱️ *Duração:* ${video.timestamp}\n👁️ *Views:* ${video.views}\n\n⏳ Baixando áudio...`);
+      // Usar API externa pois ytdl-core pode falhar em VPS
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de audio.');
 
-    // Tentar múltiplas APIs
-    const apis = [
-      `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`,
-      `https://api.lolhuman.xyz/api/ytaudio?apikey=9b817532fadff8fc7cb86862&url=${encodeURIComponent(video.url)}`,
-      `https://api.ashiq.dev/api/ytdl?url=${encodeURIComponent(video.url)}&type=audio`
-    ];
+      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(audioResp.data);
 
-    let audioBuffer = null;
-    let audioUrl = null;
+      await sock.sendMessage(groupId, {
+        audio: buffer,
+        mimetype: 'audio/mpeg',
+        ptt: false,
+      }, { quoted: message });
 
-    for (const apiUrl of apis) {
-      try {
-        const { data } = await axios.get(apiUrl, { timeout: 15000 });
-        
-        if (data?.url || data?.result?.url) {
-          audioUrl = data.url || data.result?.url;
-          const audioResp = await axios.get(audioUrl, { 
-            responseType: 'arraybuffer', 
-            timeout: 60000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          audioBuffer = Buffer.from(audioResp.data);
-          break;
-        }
-      } catch (e) {
-        console.log(`[PLAY] API falhou: ${apiUrl}`, e.message);
-        continue;
+      await sock.sendMessage(groupId, {
+        image: { url: video.thumbnail },
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}\nViews: ${video.views}`,
+      });
+    } catch (err) { return reply('Erro ao baixar audio: ' + err.message); }
+    return;
+  }
+
+  if (command === '#playvideo' || command === '#ytmp4') {
+    if (args.length === 0) return reply('Use: #playvideo [nome ou URL]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      if (video.seconds > 600) return reply('Video muito longo (max 10 minutos).');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
+
+      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`;
+      const { data } = await axios.get(apiUrl, { timeout: 30000 });
+      if (!data?.url) return reply('Erro ao obter link de video.');
+
+      const videoResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 120000 });
+      const buffer = Buffer.from(videoResp.data);
+
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}`,
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar video: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ytsearch') {
+    if (args.length === 0) return reply('Use: #ytsearch [busca]');
+    try {
+      const results = await yts(args.join(' '));
+      const videos = results.videos.slice(0, 5);
+      if (!videos.length) return reply('Nenhum resultado.');
+      let text = '*Resultados no YouTube:*\n\n';
+      videos.forEach((v, i) => {
+        text += `${i + 1}. *${v.title}*\nDuracao: ${v.timestamp}\nURL: ${v.url}\n\n`;
+      });
+      return reply(text);
+    } catch { return reply('Erro na busca.'); }
+  }
+
+  if (command === '#tiktok') {
+    if (args.length === 0) return reply('Use: #tiktok [URL do video]');
+    const url = args[0];
+    await reply('Baixando TikTok...');
+    try {
+      const { data } = await axios.get(
+        `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.video?.noWatermark) return reply('Erro ao obter link do video.');
+      const videoResp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(videoResp.data);
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: data.author?.nickname ? `@${data.author.nickname}` : '',
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar TikTok: ' + err.message); }
+    return;
+  }
+
+  if (command === '#instagram' || command === '#insta') {
+    if (args.length === 0) return reply('Use: #instagram [URL]');
+    const url = args[0];
+    await reply('Baixando Instagram...');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`,
+        { timeout: 20000 }
+      );
+      if (!data?.url) return reply('Erro ao baixar. Verifique se o link e valido e o perfil e publico.');
+      const mediaResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(mediaResp.data);
+      const isVideo = data.type === 'video';
+      if (isVideo) {
+        await sock.sendMessage(groupId, { video: buffer, caption: 'Instagram' }, { quoted: message });
+      } else {
+        await sock.sendMessage(groupId, { image: buffer, caption: 'Instagram' }, { quoted: message });
       }
-    }
-
-    if (!audioBuffer) {
-      return reply('❌ Erro ao baixar áudio. Tente novamente mais tarde.');
-    }
-
-    // Enviar áudio
-    await sock.sendMessage(groupId, {
-      audio: audioBuffer,
-      mimetype: 'audio/mpeg',
-      ptt: false
-    }, { quoted: message });
-
-    // Enviar thumbnail
-    await sock.sendMessage(groupId, {
-      image: { url: video.thumbnail },
-      caption: `🎵 *${video.title}*\n⏱️ Duração: ${video.timestamp}\n👁️ Views: ${video.views}\n\n✅ Download concluído!`
-    });
-
-  } catch (err) {
-    console.log('[ERRO PLAY]', err);
-    return reply('❌ Erro ao baixar áudio: ' + err.message);
+    } catch (err) { return reply('Erro ao baixar Instagram: ' + err.message); }
+    return;
   }
-  return;
-}
 
-// #playvideo / #ytmp4 - Baixar vídeo do YouTube
-if (command === '#playvideo' || command === '#ytmp4') {
-  if (args.length === 0) return reply('❌ Use: #playvideo [nome ou URL]\nExemplo: #playvideo video legal');
-  
-  const query = args.join(' ');
-  await reply(`🔍 *Buscando:* ${query}`);
-
-  try {
-    const results = await yts(query);
-    const video = results.videos[0];
-    
-    if (!video) return reply('❌ Nenhum resultado encontrado.');
-
-    if (video.seconds > 600) {
-      return reply('❌ Vídeo muito longo (máximo 10 minutos).');
-    }
-
-    await reply(`🎬 *Vídeo encontrado!*\n\n📌 *Título:* ${video.title}\n⏱️ *Duração:* ${video.timestamp}\n👁️ *Views:* ${video.views}\n\n⏳ Baixando vídeo...`);
-
-    // Tentar múltiplas APIs
-    const apis = [
-      `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`,
-      `https://api.lolhuman.xyz/api/ytvideo?apikey=9b817532fadff8fc7cb86862&url=${encodeURIComponent(video.url)}`,
-      `https://api.ashiq.dev/api/ytdl?url=${encodeURIComponent(video.url)}&type=video`
-    ];
-
-    let videoBuffer = null;
-    let videoUrl = null;
-
-    for (const apiUrl of apis) {
-      try {
-        const { data } = await axios.get(apiUrl, { timeout: 15000 });
-        
-        if (data?.url || data?.result?.url) {
-          videoUrl = data.url || data.result?.url;
-          const videoResp = await axios.get(videoUrl, { 
-            responseType: 'arraybuffer', 
-            timeout: 120000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          videoBuffer = Buffer.from(videoResp.data);
-          break;
-        }
-      } catch (e) {
-        console.log(`[PLAYVIDEO] API falhou: ${apiUrl}`, e.message);
-        continue;
-      }
-    }
-
-    if (!videoBuffer) {
-      return reply('❌ Erro ao baixar vídeo. Tente novamente mais tarde.');
-    }
-
-    // Enviar vídeo
-    await sock.sendMessage(groupId, {
-      video: videoBuffer,
-      caption: `🎬 *${video.title}*\n⏱️ Duração: ${video.timestamp}\n\n✅ Download concluído!`
-    }, { quoted: message });
-
-  } catch (err) {
-    console.log('[ERRO PLAYVIDEO]', err);
-    return reply('❌ Erro ao baixar vídeo: ' + err.message);
+  if (command === '#pinterest') {
+    if (args.length === 0) return reply('Use: #pinterest [busca]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/pinterest?search=${encodeURIComponent(query)}`,
+        { timeout: 15000 }
+      );
+      if (!data?.result?.length) return reply('Nenhuma imagem encontrada.');
+      const img = data.result[Math.floor(Math.random() * Math.min(data.result.length, 5))];
+      await sock.sendMessage(groupId, { image: { url: img }, caption: `Pinterest: ${query}` }, { quoted: message });
+    } catch { return reply('Erro ao buscar no Pinterest.'); }
+    return;
   }
-  return;
-}
 
-// #ytsearch - Buscar no YouTube
-if (command === '#ytsearch') {
-  if (args.length === 0) return reply('❌ Use: #ytsearch [busca]\nExemplo: #ytsearch musicas relaxantes');
-  
-  const query = args.join(' ');
-  await reply(`🔍 *Buscando no YouTube:* ${query}`);
-
-  try {
-    const results = await yts(query);
-    const videos = results.videos.slice(0, 10);
-    
-    if (!videos.length) return reply('❌ Nenhum resultado encontrado.');
-
-    let text = `╔══════════════════╗\n     📺 RESULTADOS DO YOUTUBE\n╚══════════════════╝\n\n`;
-    
-    videos.forEach((v, i) => {
-      text += `${i + 1}. *${v.title}*\n`;
-      text += `   ⏱️ ${v.timestamp} | 👁️ ${v.views}\n`;
-      text += `   📌 ${v.url}\n\n`;
-    });
-
-    text += `╔══════════════════╗\n      ⚡ SignaBOT ⚡\n╚══════════════════╝`;
-
-    return reply(text);
-
-  } catch (err) {
-    console.log('[ERRO YTSEARCH]', err);
-    return reply('❌ Erro na busca: ' + err.message);
+  if (command === '#letra') {
+    if (args.length === 0) return reply('Use: #letra [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.vagalume.com.br/search.php?q=${encodeURIComponent(query)}&apikey=09f9e8f8`,
+        { timeout: 10000 }
+      );
+      if (data.type === 'notfound') return reply('Letra nao encontrada.');
+      const music = data.response?.docs?.[0];
+      if (!music) return reply('Letra nao encontrada.');
+      const letra = music.text.substring(0, 1500);
+      return reply(`*${music.band.name} - ${music.name}*\n\n${letra}${music.text.length > 1500 ? '\n\n[Continua...]' : ''}`);
+    } catch { return reply('Erro ao buscar letra.'); }
   }
-}
 
-// #tiktok - Baixar vídeo do TikTok
-if (command === '#tiktok') {
-  if (args.length === 0) return reply('❌ Use: #tiktok [URL do vídeo]\nExemplo: #tiktok https://tiktok.com/@user/video/123456');
-  
-  const url = args[0];
+  if (command === '#spotify') {
+    if (args.length === 0) return reply('Use: #spotify [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=1`,
+        { timeout: 10000 }
+      );
+      const song = data?.data?.results?.[0];
+      if (!song) return reply('Musica nao encontrada.');
+      return reply(`*${song.name}*\nArtista: ${song.artists?.primary?.map(a => a.name).join(', ') || '-'}\nAlbum: ${song.album?.name || '-'}\nDuracao: ${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, '0')}`);
+    } catch { return reply('Erro ao buscar no Spotify.'); }
+  }
+
+  if (command === '#autobaixar') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.autoBaixar = true; saveSettings(); return reply('Auto-baixar ativado! Links de YouTube, TikTok e Instagram serao baixados automaticamente.'); }
+    if (args[0] === 'off') { settings.autoBaixar = false; saveSettings(); return reply('Auto-baixar desativado.'); }
+    return reply(`Auto-baixar: ${settings.autoBaixar ? 'Ativado' : 'Desativado'}\nUse: #autobaixar [on/off]`);
+  }
+
   // ===========================================================
   // ADMINISTRACAO
   // ===========================================================
