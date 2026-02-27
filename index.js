@@ -648,13 +648,20 @@ os menus disponíveis:
   // FIGURINHAS 
   // ===========================================================
 
-const sharp = require('sharp')
-const fs = require('fs')
-const path = require('path')
-const ffmpeg = require('fluent-ffmpeg')
-const ffmpegPath = require('ffmpeg-static')
+const prefix = '#'
 
-ffmpeg.setFfmpegPath(ffmpegPath)
+const body =
+  message?.conversation ||
+  message?.extendedTextMessage?.text ||
+  message?.imageMessage?.caption ||
+  message?.videoMessage?.caption ||
+  ''
+
+const isCmd = body.startsWith(prefix)
+if (!isCmd) return
+
+const args = body.slice(prefix.length).trim().split(/ +/)
+const command = args.shift().toLowerCase()
 
 // ================================
 // 🖼️ STICKER (IMG + VIDEO)
