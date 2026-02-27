@@ -649,7 +649,6 @@ os menus disponíveis:
   // ===========================================================
 
   if (command === '#sticker' || command === '#s') {
-
     const quoted = getQuoted(message)
     const imageMsg = quoted?.imageMessage || message.message?.imageMessage
     const videoMsg = quoted?.videoMessage || message.message?.videoMessage
@@ -661,14 +660,8 @@ os menus disponíveis:
     await reply('⏳ Criando figurinha...')
 
     try {
-
-      // =====================================================
-      // 🖼️ IMAGEM → WEBP
-      // =====================================================
       if (imageMsg) {
-
         const buffer = await downloadMedia(imageMsg, 'image')
-
         const webpBuffer = await sharp(buffer)
           .resize(512, 512, {
             fit: 'contain',
@@ -682,21 +675,15 @@ os menus disponíveis:
           packname: 'SignaBot',
           author: senderName
         }, { quoted: message })
-
         return
       }
 
-      // =====================================================
-      // 🎥 VÍDEO → WEBP ANIMADO
-      // =====================================================
       if (videoMsg) {
-
         if (videoMsg.seconds > 10) {
           return reply('❌ O vídeo deve ter no máximo 10 segundos.')
         }
 
         const videoBuffer = await downloadMedia(videoMsg, 'video')
-
         const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
         const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
 
@@ -721,7 +708,6 @@ os menus disponíveis:
         })
 
         const webpBuffer = fs.readFileSync(outputPath)
-
         await sock.sendMessage(groupId, {
           sticker: webpBuffer,
           packname: 'SignaBot',
@@ -730,13 +716,279 @@ os menus disponíveis:
 
         fs.unlinkSync(inputPath)
         fs.unlinkSync(outputPath)
-
         return
       }
-
     } catch (err) {
       console.log('Erro Sticker:', err)
       return reply('❌ Erro ao criar figurinha.')
+    }
+  }
+
+  // ===========================================================
+  // FIGURINHAS - TODOS OS COMANDOS
+  // ===========================================================
+
+  // #fig - Atalho para criar figurinha
+  if (command === '#fig') {
+    const quoted = getQuoted(message)
+    const imageMsg = quoted?.imageMessage || message.message?.imageMessage
+    const videoMsg = quoted?.videoMessage || message.message?.videoMessage
+
+    if (!imageMsg && !videoMsg) {
+      return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
+    }
+
+    await reply('⏳ Criando figurinha...')
+
+    try {
+      if (imageMsg) {
+        const buffer = await downloadMedia(imageMsg, 'image')
+        const webpBuffer = await sharp(buffer)
+          .resize(512, 512, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .webp({ quality: 80 })
+          .toBuffer()
+
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+        return
+      }
+
+      if (videoMsg) {
+        if (videoMsg.seconds > 10) {
+          return reply('❌ O vídeo deve ter no máximo 10 segundos.')
+        }
+
+        const videoBuffer = await downloadMedia(videoMsg, 'video')
+        const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
+        const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
+
+        fs.writeFileSync(inputPath, videoBuffer)
+
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions([
+              '-vcodec libwebp',
+              '-vf scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+              '-loop 0',
+              '-ss 00:00:00',
+              '-t 10',
+              '-preset default',
+              '-an',
+              '-vsync 0'
+            ])
+            .toFormat('webp')
+            .save(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+        })
+
+        const webpBuffer = fs.readFileSync(outputPath)
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+
+        fs.unlinkSync(inputPath)
+        fs.unlinkSync(outputPath)
+        return
+      }
+    } catch (err) {
+      console.log('Erro #fig:', err)
+      return reply('❌ Erro ao criar figurinha.')
+    }
+  }
+
+  // #ttp - Texto para figurinha
+  if (command === '#ttp') {
+    if (args.length === 0) return reply('❌ Use: #ttp [texto]\nExemplo: #ttp Olá Mundo')
+    
+    const text = args.join(' ')
+    await reply('⏳ Criando figurinha de texto...')
+
+    try {
+      // Tentar várias APIs
+      const apis = [
+        `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`,
+        `https://api.lolhuman.xyz/api/ttp?apikey=9b817532fadff8fc7cb86862&text=${encodeURIComponent(text)}`,
+        `https://api.ashiq.dev/api/ttp?text=${encodeURIComponent(text)}`
+      ]
+
+      for (const apiUrl of apis) {
+        try {
+          const response = await axios.get(apiUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000
+          })
+
+          if (response.data && response.data.length > 100) {
+            await sock.sendMessage(groupId, {
+              sticker: Buffer.from(response.data)
+            }, { quoted: message })
+            return
+          }
+        } catch (e) {
+          console.log(`API TTP falhou: ${apiUrl}`, e.message)
+          continue
+        }
+      }
+
+      return reply('❌ Erro ao criar figurinha de texto. Tente novamente.')
+
+    } catch (err) {
+      console.log('Erro #ttp:', err)
+      return reply('❌ Erro ao criar figurinha de texto.')
+    }
+  }
+
+  // #attp - Texto animado para figurinha
+  if (command === '#attp') {
+    if (args.length === 0) return reply('❌ Use: #attp [texto]\nExemplo: #attp Olá Mundo')
+    
+    const text = args.join(' ')
+    await reply('⏳ Criando figurinha animada...')
+
+    try {
+      const response = await axios.get(
+        `https://api.xteam.xyz/attp?text=${encodeURIComponent(text)}`,
+        { responseType: 'arraybuffer', timeout: 15000 }
+      )
+
+      await sock.sendMessage(groupId, {
+        sticker: Buffer.from(response.data)
+      }, { quoted: message })
+
+    } catch (err) {
+      console.log('Erro #attp:', err)
+      return reply('❌ Erro ao criar figurinha animada. Tente novamente.')
+    }
+  }
+
+  // #toimg - Converter figurinha para imagem
+  if (command === '#toimg') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
+
+    if (!stickerMsg) {
+      return reply('❌ Marque uma figurinha para converter em imagem!')
+    }
+
+    await reply('⏳ Convertendo figurinha para imagem...')
+
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
+
+      // Converter WebP para PNG usando sharp
+      const pngBuffer = await sharp(buffer)
+        .png()
+        .toBuffer()
+
+      await sock.sendMessage(groupId, {
+        image: pngBuffer,
+        caption: '✅ Imagem convertida com sucesso!'
+      }, { quoted: message })
+
+    } catch (err) {
+      console.log('Erro #toimg:', err)
+      return reply('❌ Erro ao converter figurinha.')
+    }
+  }
+
+  // #togif - Converter figurinha animada para GIF
+  if (command === '#togif') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
+
+    if (!stickerMsg) {
+      return reply('❌ Marque uma figurinha animada para converter em GIF!')
+    }
+
+    await reply('⏳ Convertendo figurinha para GIF...')
+
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
+
+      // Salvar WebP temporário
+      const inputPath = path.join(__dirname, `sticker_${Date.now()}.webp`)
+      const outputPath = path.join(__dirname, `gif_${Date.now()}.gif`)
+
+      fs.writeFileSync(inputPath, buffer)
+
+      // Converter WebP para GIF usando ffmpeg
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-vf fps=15',
+            '-loop 0'
+          ])
+          .toFormat('gif')
+          .save(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+      })
+
+      const gifBuffer = fs.readFileSync(outputPath)
+
+      await sock.sendMessage(groupId, {
+        video: gifBuffer,
+        gifPlayback: true,
+        caption: '✅ GIF convertido com sucesso!'
+      }, { quoted: message })
+
+      // Limpeza
+      fs.unlinkSync(inputPath)
+      fs.unlinkSync(outputPath)
+
+    } catch (err) {
+      console.log('Erro #togif:', err)
+      return reply('❌ Erro ao converter figurinha para GIF.')
+    }
+  }
+
+  // #take - Mudar autor/pack da figurinha
+  if (command === '#take') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
+
+    if (!stickerMsg) {
+      return reply('❌ Marque uma figurinha para editar!')
+    }
+
+    const author = args[0] || 'SignaBot'
+    const pack = args[1] || 'Stickers'
+
+    await reply(`⏳ Alterando figurinha...\nAutor: ${author}\nPack: ${pack}`)
+
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
+
+      await sock.sendMessage(groupId, {
+        sticker: buffer,
+        packname: pack,
+        author: author
+      }, { quoted: message })
+
+    } catch (err) {
+      console.log('Erro #take:', err)
+      return reply('❌ Erro ao editar figurinha.')
     }
   }
 
