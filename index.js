@@ -458,68 +458,105 @@ if (command === '!status' || command === '#status') {
 // FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
 // ===========================================================
 
-if (command === '#sticker' || command === '#fig' || command === '#s') {
-  const quoted = getQuoted(message);
-  const targetMsg = quoted?.imageMessage || quoted?.videoMessage
-    || message.message?.imageMessage || message.message?.videoMessage;
+const sharp = require('sharp')
+const ffmpeg = require('fluent-ffmpeg')
+const ffmpegPath = require('ffmpeg-static')
+const fs = require('fs')
+const path = require('path')
 
-  if (!targetMsg) return reply('❌ Marque uma imagem ou vídeo para criar a figurinha!');
+ffmpeg.setFfmpegPath(ffmpegPath)
+
+if (command === '#sticker' || command === '#s') {
+
+  const quoted = getQuoted(message)
+  const imageMsg = quoted?.imageMessage || message.message?.imageMessage
+  const videoMsg = quoted?.videoMessage || message.message?.videoMessage
+
+  if (!imageMsg && !videoMsg) {
+    return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
+  }
+
+  await reply('⏳ Criando figurinha...')
 
   try {
-    await reply('⏳ Criando figurinha...');
-    
-    const type = targetMsg === message.message?.imageMessage || quoted?.imageMessage ? 'image' : 'video';
-    const buffer = await downloadMedia(targetMsg, type);
-    
-    if (!buffer) return reply('❌ Erro ao baixar mídia.');
-    
-    // Opção 1: Tentar primeiro com API externa (mais compatível com celular)
-    try {
-      // Converter para base64
-      const base64 = buffer.toString('base64');
-      
-      // Usar API de figurinhas (várias opções)
-      const apiUrl = `https://api.xteam.xyz/sticker/maker?file=${encodeURIComponent(`data:image/jpeg;base64,${base64}`)}&author=SignaBot&pack=Figurinhas`;
-      
-      const response = await axios.get(apiUrl, { 
-        responseType: 'arraybuffer', 
-        timeout: 15000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      
-      const stickerBuffer = Buffer.from(response.data);
-      
-      await sock.sendMessage(groupId, { 
-        sticker: stickerBuffer,
-        mimetype: 'image/webp'
-      }, { quoted: message });
-      
-      return;
-    } catch (apiErr) {
-      console.log('[API STICKER ERROR]', apiErr.message);
-      
-      // Opção 2: Fallback para o método direto
-      await sock.sendMessage(groupId, { 
-        sticker: buffer,
-        mimetype: 'image/webp'
-      }, { 
-        quoted: message,
-        // Configurações adicionais para compatibilidade
-        contextInfo: {
-          participant: sender,
-          remoteJid: groupId,
-          quotedMessage: message.message
-        }
-      });
-    }
-    
-  } catch (err) { 
-    console.log('[ERRO STICKER]', err);
-    return reply('❌ Erro ao criar figurinha: ' + err.message); 
-  }
-  return;
-}
 
+    // =====================================================
+    // 🖼️ IMAGEM → WEBP
+    // =====================================================
+    if (imageMsg) {
+
+      const buffer = await downloadMedia(imageMsg, 'image')
+
+      const webpBuffer = await sharp(buffer)
+        .resize(512, 512, {
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .webp({ quality: 80 })
+        .toBuffer()
+
+      await sock.sendMessage(groupId, {
+        sticker: webpBuffer,
+        packname: 'SignaBot',
+        author: 'SeuNome'
+      }, { quoted: message })
+
+      return
+    }
+
+    // =====================================================
+    // 🎥 VÍDEO → WEBP ANIMADO
+    // =====================================================
+    if (videoMsg) {
+
+      if (videoMsg.seconds > 10) {
+        return reply('❌ O vídeo deve ter no máximo 10 segundos.')
+      }
+
+      const videoBuffer = await downloadMedia(videoMsg, 'video')
+
+      const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
+      const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
+
+      fs.writeFileSync(inputPath, videoBuffer)
+
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-vcodec libwebp',
+            '-vf scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+            '-loop 0',
+            '-ss 00:00:00',
+            '-t 10',
+            '-preset default',
+            '-an',
+            '-vsync 0'
+          ])
+          .toFormat('webp')
+          .save(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+      })
+
+      const webpBuffer = fs.readFileSync(outputPath)
+
+      await sock.sendMessage(groupId, {
+        sticker: webpBuffer,
+        packname: 'SignaBot',
+        author: 'SeuNome'
+      }, { quoted: message })
+
+      fs.unlinkSync(inputPath)
+      fs.unlinkSync(outputPath)
+
+      return
+    }
+
+  } catch (err) {
+    console.log('Erro Sticker:', err)
+    return reply('❌ Erro ao criar figurinha.')
+  }
+}
   // ===========================================================
   // DOWNLOADS
   // ===========================================================
