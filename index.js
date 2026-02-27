@@ -12,6 +12,11 @@ const axios = require('axios');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const yts = require('yt-search');
+const sharp = require('sharp');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 // ============================================================
 // SIGNABOT - Bot WhatsApp Completo
@@ -273,290 +278,468 @@ if (command === '!status' || command === '#status') {
   const left = sub.expiresAt - Date.now();
   return reply(`📊 *Status da Assinatura*\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
 }
+
   // ===========================================================
-  // MENU PRINCIPAL
+  // MENU PRINCIPAL - VERSÃO BONITA
   // ===========================================================
 
   if (command === '#menu') {
     const sub = args[0]?.toLowerCase();
+    const dataAtual = new Date().toLocaleDateString('pt-BR');
+    const horaAtual = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     if (!sub) {
-      return reply(`*${BOT_NAME} - Menu Principal*\n\nEscolha um submenu:\n\n${PREFIX}menu figurinhas\n${PREFIX}menu brincadeiras\n${PREFIX}menu efeitos\n${PREFIX}menu adm\n${PREFIX}menu download\n${PREFIX}menu info\n${PREFIX}menu grupo\n${PREFIX}menu gold\n\nInfo:\n${PREFIX}ping - Latencia\n${PREFIX}dono - Contato\n!status - Assinatura`);
+      const menuPrincipal = `
+╔══════════════════╗
+🤖 MENU PRINCIPAL 🤖
+╚══════════════════╝
+
+👤 *USUÁRIO*
+➤ Nome: ${senderName}
+➤ Data: ${dataAtual}
+➤ Hora: ${horaAtual}
+➤ Prefixo: #
+
+📌 *MENUS DISPONÍVEIS*
+➤ #menu figurinhas
+➤ #menu download
+➤ #menu admin
+➤ #menu diversão
+➤ #menu grupo
+➤ #menu info
+➤ #menu gold
+
+⚡ *COMANDOS CONFIG*
+➤ #ping
+➤ #dono
+➤ #status
+
+╔══════════════════╗
+  ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `;
+      return reply(menuPrincipal);
     }
 
-    if (sub === 'figurinhas') {
-      return reply(`*Menu Figurinhas*\n\n${PREFIX}sticker - Imagem/video para figurinha\n${PREFIX}toimg - Figurinha para imagem\n${PREFIX}take [autor] [pack] - Renomear figurinha\n${PREFIX}togif - Figurinha para GIF\n${PREFIX}tomp4 - Figurinha para video\n${PREFIX}ttp [texto] - Texto para figurinha\n${PREFIX}fig - Criar figurinha`);
+    // ===========================================================
+    // MENU FIGURINHAS
+    // ===========================================================
+    if (sub === 'figurinhas' || sub === 'fig') {
+      return reply(`
+╔══════════════════╗
+📦 MENU FIGURINHAS 📦
+╚══════════════════╝
+
+🖼️ *CRIAR FIGURINHA*
+➤ #sticker
+➤ #fig
+➤ #s
+
+📝 *TEXTO PARA FIGURINHA*
+➤ #ttp [texto]
+➤ #attp [texto]
+
+🔄 *CONVERSORES*
+➤ #toimg
+➤ #togif
+
+✏️ *EDIÇÃO*
+➤ #take [autor] [pack]
+
+╔══════════════════╗
+   ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
     }
 
+    // ===========================================================
+    // MENU DOWNLOAD
+    // ===========================================================
     if (sub === 'download') {
-      return reply(`*Menu Download*\n\n${PREFIX}play [nome/url] - Audio do YouTube\n${PREFIX}playvideo [nome/url] - Video do YouTube\n${PREFIX}ytmp4 [url] - YouTube MP4\n${PREFIX}tiktok [url] - Baixar TikTok\n${PREFIX}instagram [url] - Baixar Instagram\n${PREFIX}pinterest [busca] - Imagens Pinterest\n${PREFIX}spotify [nome] - Buscar no Spotify\n${PREFIX}letra [musica] - Letra da musica\n${PREFIX}autobaixar [on/off] - Auto-baixar links`);
+      return reply(`
+╔══════════════════╗
+📥 MENU DOWNLOAD 📥
+╚══════════════════╝
+
+▶️ *YOUTUBE*
+➤ #play [nome/url]
+➤ #playvideo [nome]
+➤ #ytsearch [busca]
+
+📱 *TIKTOK*
+➤ #tiktok [url]
+
+📸 *INSTAGRAM*
+➤ #instagram [url]
+
+🎵 *MÚSICAS*
+➤ #letra [música]
+➤ #spotify [nome]
+
+🖼️ *IMAGENS*
+➤ #pinterest [busca]
+
+╔══════════════════╗
+  ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
     }
 
-    if (sub === 'adm') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao para ver este menu.');
-      return reply(`*Menu ADM*\n\n${PREFIX}ban @user - Banir\n${PREFIX}add [num] - Adicionar membro\n${PREFIX}promover @user - Promover a admin\n${PREFIX}rebaixar @user - Remover admin\n${PREFIX}cargo @user [admin|mod|aux] - Atribuir cargo\n${PREFIX}advertir @user [motivo] - Advertir\n${PREFIX}checkwarnings @user - Ver adv.\n${PREFIX}removewarnings @user - Remover adv.\n${PREFIX}marcar [texto] - Marcar todos\n${PREFIX}tagall [texto] - Marcar todos\n${PREFIX}bemvindo [on/off] - Boas-vindas\n${PREFIX}antilink [on/off] - Antilink\n${PREFIX}fechargp - Fechar grupo\n${PREFIX}abrirgp - Abrir grupo\n${PREFIX}banghost - Banir fantasmas\n${PREFIX}inativos [dias] - Ver inativos\n${PREFIX}nomegp [nome] - Mudar nome\n${PREFIX}descgp [desc] - Mudar descricao\n${PREFIX}linkgp - Link do grupo\n${PREFIX}regras [texto] - Definir regras\n${PREFIX}deletar - Apagar msg marcada\n${PREFIX}mute @user - Mutar membro\n${PREFIX}desmute @user - Desmutar membro\n${PREFIX}listanegra add [num] - Lista negra\n${PREFIX}listanegra rem [num] - Remover da lista\n${PREFIX}listanegra ver - Ver lista\n${PREFIX}setlimitec [num] - Limite de adv.\n${PREFIX}sorteio [texto] - Sortear membro\n${PREFIX}mensagem-automatica [hora HH:MM] [texto] - Agendar\n${PREFIX}listar-mensagens-automaticas\n${PREFIX}limpar-mensagens-automaticas\n${PREFIX}anotar [texto] - Salvar nota\n${PREFIX}anotacao - Ver notas\n${PREFIX}tirar_nota [num] - Apagar nota\n${PREFIX}so_adm [on/off] - Apenas admins\n${PREFIX}antipalavra [on/off]\n${PREFIX}addpalavra [palavra] - Adicionar palavrao\n${PREFIX}delpalavra [palavra] - Remover palavrao\n${PREFIX}listapalavrao - Ver palavroes\n${PREFIX}anticall [on/off] - Bloquear chamadas\n${PREFIX}x9visuunica [on/off] - Revelar view-once\n${PREFIX}ausente [texto] - Modo ausente\n${PREFIX}ativo - Voltar de ausente`);
-    }
+    // ===========================================================
+    // MENU ADMIN
+    // ===========================================================
+    if (sub === 'admin' || sub === 'adm') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) {
+        return reply(`
+╔══════════════════╗
+⚠️ ACESSO NEGADO ⚠️
+╚══════════════════╝
 
-    if (sub === 'brincadeiras') {
-      return reply(`*Menu Brincadeiras*\n\n${PREFIX}ppt - Pedra Papel Tesoura\n${PREFIX}dadosorte - Dado da sorte\n${PREFIX}porcentagem [texto] - Calcular %\n${PREFIX}chance [texto] - Calcular chance\n${PREFIX}sorteio - Sortear membro\n${PREFIX}dado [lados] - Rolar dado\n${PREFIX}rankgay - Ranking gay\n${PREFIX}rankgado - Ranking gado\n${PREFIX}rankgostosa - Ranking gostosa\n${PREFIX}rankgostoso - Ranking gostoso\n${PREFIX}rankcorno - Ranking corno\n${PREFIX}8ball [pergunta] - Bola magica\n${PREFIX}verdadeoudesafio - V ou D\n${PREFIX}eujaeununca - Eu ja e nunca\n${PREFIX}fakemsg @user [texto] - Mensagem falsa\n${PREFIX}casal - Sortear casal\n${PREFIX}bot - Ver se o bot esta acordado`);
-    }
+❌ Apenas administradores
+   podem ver este menu.
 
-    if (sub === 'efeitos') {
-      return reply(`*Menu Efeitos*\n\n${PREFIX}blur - Desfoque na imagem marcada\n${PREFIX}greyscale - Escala de cinza\n${PREFIX}sepia - Efeito sepia\n${PREFIX}invert - Inverter cores\n${PREFIX}triggered - Efeito triggered\n${PREFIX}jail - Efeito prisao\n${PREFIX}wasted - Efeito wasted\n${PREFIX}gay - Efeito arco-iris\n${PREFIX}totext - Imagem para texto\n${PREFIX}traduzir [idioma] - Traduzir audio/texto`);
-    }
-
-    if (sub === 'grupo') {
-      return reply(`*Menu Grupo*\n\n${PREFIX}rankativos - Top 10 mais ativos\n${PREFIX}rankativosg - Top 5 atividade hoje\n${PREFIX}inativos [dias] - Membros inativos\n${PREFIX}gpinfo - Info do grupo\n${PREFIX}admins - Lista de admins\n${PREFIX}regras - Ver regras do grupo\n${PREFIX}aniversario [dia/mes] - Cadastrar aniversario\n${PREFIX}meuaniversario - Ver seu aniversario\n${PREFIX}feedback [texto] - Enviar feedback\n${PREFIX}listarafk - Ver lista AFK`);
-    }
-
-    if (sub === 'info') {
-      return reply(`*Menu Info*\n\n${PREFIX}info - Info do bot\n${PREFIX}dono - Contato do dono\n${PREFIX}ping - Latencia\n${PREFIX}ping2 - Uptime\n${PREFIX}sender - Seu numero\n${PREFIX}imc [peso] [altura] - Calcular IMC\n${PREFIX}calculadora [expr] - Calcular\n${PREFIX}cep [cep] - Buscar CEP\n${PREFIX}signo [data DD/MM] - Ver signo\n${PREFIX}wikipedia [busca] - Buscar na Wikipedia\n${PREFIX}traduzir [en] [texto] - Traduzir\n${PREFIX}clima [cidade] - Clima atual\n${PREFIX}horario - Horario atual`);
-    }
-
-    if (sub === 'gold') {
-      return reply(`*Menu Gold*\n\n${PREFIX}gold - Ver seus golds\n${PREFIX}rankgold - Ranking de golds\n${PREFIX}doargold @user [qtd] - Doar golds\n${PREFIX}minerar_gold - Minerar golds\n${PREFIX}daily - Recompensa diaria\n${PREFIX}roubargold @user - Roubar golds\n${PREFIX}apostar [qtd] - Apostar golds\n${PREFIX}cassino [qtd] - Cassino\n${PREFIX}roletadasorte [qtd] - Roleta\n${PREFIX}doublegold [qtd] - Dobrar aposta`);
-    }
-
-    return reply('Submenu nao encontrado. Use #menu para ver os disponiveis.');
-  }
-
-  // ===========================================================
-  // INFO / UTILITARIOS
-  // ===========================================================
-
-  if (command === '#ping') {
-    const start = Date.now();
-    await reply('Calculando...');
-    return reply(`Pong! Latencia: ${Date.now() - start}ms`);
-  }
-
-  if (command === '#ping2') {
-    const uptime = process.uptime();
-    const h = Math.floor(uptime / 3600);
-    const m = Math.floor((uptime % 3600) / 60);
-    const s = Math.floor(uptime % 60);
-    return reply(`Bot online ha ${h}h ${m}m ${s}s`);
-  }
-
-  if (command === '#info') {
-    return reply(`*${BOT_NAME}*\n\nVersao: 2.0\nStatus: Online\nDono: wa.me/${OWNER_NUMBER}\nPrefixos: # e /\n\nDigite #menu para ver os comandos.`);
-  }
-
-  if (command === '#dono') {
-    return reply(`Dono do bot:\nwa.me/${OWNER_NUMBER}\n\nPara contratar o ${BOT_NAME} para o seu grupo, entre em contato!`);
-  }
-
-  if (command === '#sender') {
-    const num = sender.split('@')[0];
-    return reply(`Seu numero: +${num}`);
-  }
-
-  if (command === '#horario') {
-    return reply(`Horario atual (Brasilia):\n${new Date().toLocaleString('pt-BR', { timeZone: 'America/Manaus' })}`);
-  }
-
-  if (command === '#imc') {
-    if (args.length < 2) return reply('Use: #imc [peso em kg] [altura em m]\nEx: #imc 70 1.75');
-    const peso = parseFloat(args[0].replace(',', '.'));
-    const altura = parseFloat(args[1].replace(',', '.'));
-    if (isNaN(peso) || isNaN(altura) || altura === 0) return reply('Valores invalidos.');
-    const imc = (peso / (altura * altura)).toFixed(2);
-    let cat = '';
-    if (imc < 18.5) cat = 'Abaixo do peso';
-    else if (imc < 25) cat = 'Peso normal';
-    else if (imc < 30) cat = 'Sobrepeso';
-    else if (imc < 35) cat = 'Obesidade Grau I';
-    else if (imc < 40) cat = 'Obesidade Grau II';
-    else cat = 'Obesidade Grau III';
-    return reply(`Seu IMC: ${imc}\nClassificacao: ${cat}`);
-  }
-
-  if (command === '#calculadora' || command === '#calc') {
-    if (args.length === 0) return reply('Use: #calculadora [expressao]\nEx: #calculadora 2+2*3');
-    try {
-      const expr = args.join(' ').replace(/[^0-9+\-*/().% ]/g, '');
-      // eslint-disable-next-line no-eval
-      const result = Function('"use strict"; return (' + expr + ')')();
-      return reply(`${expr} = ${result}`);
-    } catch { return reply('Expressao invalida.'); }
-  }
-
-  if (command === '#cep') {
-    if (args.length === 0) return reply('Use: #cep [CEP]');
-    const cep = args[0].replace(/\D/g, '');
-    try {
-      const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`, { timeout: 8000 });
-      if (data.erro) return reply('CEP nao encontrado.');
-      return reply(`CEP: ${data.cep}\nLogradouro: ${data.logradouro || '-'}\nBairro: ${data.bairro || '-'}\nCidade: ${data.localidade} - ${data.uf}`);
-    } catch { return reply('Erro ao buscar CEP.'); }
-  }
-
-  if (command === '#wikipedia' || command === '#wiki') {
-    if (args.length === 0) return reply('Use: #wikipedia [busca]');
-    try {
-      const busca = encodeURIComponent(args.join(' '));
-      const { data } = await axios.get(
-        `https://pt.wikipedia.org/api/rest_v1/page/summary/${busca}`,
-        { timeout: 8000 }
-      );
-      return reply(`*${data.title}*\n\n${data.extract}\n\nFonte: ${data.content_urls?.desktop?.page || 'Wikipedia'}`);
-    } catch { return reply('Nenhum resultado encontrado.'); }
-  }
-
-  if (command === '#traduzir') {
-    if (args.length < 2) return reply('Use: #traduzir [idioma] [texto]\nEx: #traduzir en Ola mundo');
-    const lang = args[0];
-    const text = args.slice(1).join(' ');
-    try {
-      const { data } = await axios.get(
-        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=pt|${lang}`,
-        { timeout: 8000 }
-      );
-      return reply(`Traducao (${lang}):\n${data.responseData.translatedText}`);
-    } catch { return reply('Erro ao traduzir.'); }
-  }
-
-  if (command === '#signo') {
-    if (args.length === 0) return reply('Use: #signo [DD/MM]\nEx: #signo 15/03');
-    const [d, m] = (args[0] || '').split('/').map(Number);
-    const signos = [
-      { nome: 'Capricornio', de: [1,1], ate: [1,19] },
-      { nome: 'Aquario',    de: [1,20], ate: [2,18] },
-      { nome: 'Peixes',     de: [2,19], ate: [3,20] },
-      { nome: 'Aries',      de: [3,21], ate: [4,19] },
-      { nome: 'Touro',      de: [4,20], ate: [5,20] },
-      { nome: 'Gemeos',     de: [5,21], ate: [6,20] },
-      { nome: 'Cancer',     de: [6,21], ate: [7,22] },
-      { nome: 'Leao',       de: [7,23], ate: [8,22] },
-      { nome: 'Virgem',     de: [8,23], ate: [9,22] },
-      { nome: 'Libra',      de: [9,23], ate: [10,22] },
-      { nome: 'Escorpiao',  de: [10,23], ate: [11,21] },
-      { nome: 'Sagitario',  de: [11,22], ate: [12,21] },
-      { nome: 'Capricornio',de: [12,22], ate: [12,31] },
-    ];
-    const found = signos.find(s => {
-      const [de_m, de_d] = s.de;
-      const [ate_m, ate_d] = s.ate;
-      return (m === de_m && d >= de_d) || (m === ate_m && d <= ate_d);
-    });
-    return reply(found ? `Seu signo: ${found.nome}` : 'Data invalida. Use DD/MM.');
-  }
-
-  if (command === '#clima') {
-    if (args.length === 0) return reply('Use: #clima [cidade]');
-    const cidade = args.join(' ');
-    try {
-      const { data } = await axios.get(
-        `https://wttr.in/${encodeURIComponent(cidade)}?format=3&lang=pt`,
-        { timeout: 8000 }
-      );
-      return reply(`Clima em ${cidade}:\n${data}`);
-    } catch { return reply('Erro ao buscar clima.'); }
-  }
-
-  // ===========================================================
-// FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
-// ===========================================================
-
-const sharp = require('sharp')
-const ffmpeg = require('fluent-ffmpeg')
-const ffmpegPath = require('ffmpeg-static')
-const fs = require('fs')
-const path = require('path')
-
-ffmpeg.setFfmpegPath(ffmpegPath)
-
-if (command === '#sticker' || command === '#s') {
-
-  const quoted = getQuoted(message)
-  const imageMsg = quoted?.imageMessage || message.message?.imageMessage
-  const videoMsg = quoted?.videoMessage || message.message?.videoMessage
-
-  if (!imageMsg && !videoMsg) {
-    return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
-  }
-
-  await reply('⏳ Criando figurinha...')
-
-  try {
-
-    // =====================================================
-    // 🖼️ IMAGEM → WEBP
-    // =====================================================
-    if (imageMsg) {
-
-      const buffer = await downloadMedia(imageMsg, 'image')
-
-      const webpBuffer = await sharp(buffer)
-        .resize(512, 512, {
-          fit: 'contain',
-          background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .webp({ quality: 80 })
-        .toBuffer()
-
-      await sock.sendMessage(groupId, {
-        sticker: webpBuffer,
-        packname: 'SignaBot',
-        author: 'SeuNome'
-      }, { quoted: message })
-
-      return
-    }
-
-    // =====================================================
-    // 🎥 VÍDEO → WEBP ANIMADO
-    // =====================================================
-    if (videoMsg) {
-
-      if (videoMsg.seconds > 10) {
-        return reply('❌ O vídeo deve ter no máximo 10 segundos.')
+╔══════════════════╗
+   ⚡ SignaBOT ⚡
+╚══════════════════╝
+        `);
       }
 
-      const videoBuffer = await downloadMedia(videoMsg, 'video')
+      return reply(`
+╔══════════════════╗
+  🤖 MENU ADMIN 🤖
+╚══════════════════╝
 
-      const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
-      const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
+👥 *GERENCIAR MEMBROS*
+➤ #ban @user
+➤ #add 559999999999
+➤ #promover @user
+➤ #rebaixar @user
+➤ #cargo @user [admin|mod|aux]
+➤ #mute @user
+➤ #desmute @user
 
-      fs.writeFileSync(inputPath, videoBuffer)
+⚠️ *ADVERTÊNCIAS*
+➤ #advertir @user [motivo]
+➤ #checkwarnings @user
+➤ #removewarnings @user
+➤ #setlimitec [num]
 
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .outputOptions([
-            '-vcodec libwebp',
-            '-vf scale=512:512:force_original_aspect_ratio=decrease,fps=15',
-            '-loop 0',
-            '-ss 00:00:00',
-            '-t 10',
-            '-preset default',
-            '-an',
-            '-vsync 0'
-          ])
-          .toFormat('webp')
-          .save(outputPath)
-          .on('end', resolve)
-          .on('error', reject)
-      })
+📢 *MARCAÇÃO*
+➤ #marcar [texto]
+➤ #tagall [texto]
 
-      const webpBuffer = fs.readFileSync(outputPath)
+⚙️ *CONFIGURAÇÕES*
+➤ #bemvindo [on/off]
+➤ #antilink [on/off]
+➤ #so_adm [on/off]
+➤ #anticall [on/off]
+➤ #x9visuunica [on/off]
 
-      await sock.sendMessage(groupId, {
-        sticker: webpBuffer,
-        packname: 'SignaBot',
-        author: 'SeuNome'
-      }, { quoted: message })
+🔒 *CONTROLE DO GRUPO*
+➤ #fechargp
+➤ #abrirgp
+➤ #banghost
+➤ #inativos [dias]
 
-      fs.unlinkSync(inputPath)
-      fs.unlinkSync(outputPath)
+📝 *GRUPO*
+➤ #nomegp [nome]
+➤ #descgp [desc]
+➤ #linkgp
+➤ #regras [texto]
 
-      return
+🚫 *LISTA NEGRA*
+➤ #listanegra add [num]
+➤ #listanegra rem [num]
+➤ #listanegra ver
+
+🎯 *UTILIDADES*
+➤ #sorteio [texto]
+
+⏰ *MENSAGENS AUTOMÁTICAS*
+➤ #mensagem-automatica [HH:MM] [texto]
+➤ #listar-mensagens-automaticas
+➤ #limpar-mensagens-automaticas
+
+🗒️ *NOTAS*
+➤ #anotar [texto]
+➤ #anotacao
+➤ #tirar_nota [num]
+
+🚨 *FILTRO DE PALAVRAS*
+➤ #antipalavra [on/off]
+➤ #addpalavra [palavra]
+➤ #delpalavra [palavra]
+➤ #listapalavrao
+
+💤 *STATUS*
+➤ #ausente [texto]
+➤ #ativo
+
+╔══════════════════╗
+  ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
     }
 
-  } catch (err) {
-    console.log('Erro Sticker:', err)
-    return reply('❌ Erro ao criar figurinha.')
+    // ===========================================================
+    // MENU DIVERSÃO
+    // ===========================================================
+    if (sub === 'diversão' || sub === 'div') {
+      return reply(`
+╔══════════════════╗
+🎮 MENU DIVERSÃO 🎮
+╚══════════════════╝
+
+🎯 *JOGOS*
+➤ #ppt [pedra/papel/tesoura]
+➤ #dado [lados]
+➤ #8ball [pergunta]
+
+💘 *RELACIONAMENTOS*
+➤ #casal
+➤ #ship @user @user
+
+🏆 *RANKINGS*
+➤ #rankgay
+➤ #rankgado
+➤ #rankcorno
+
+🎲 *BRINCADEIRAS*
+➤ #porcentagem [texto]
+➤ #chance [texto]
+➤ #fakemsg @user [texto]
+➤ #bot
+
+╔══════════════════╗
+   ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU GRUPO
+    // ===========================================================
+    if (sub === 'grupo' || sub === 'gp') {
+      return reply(`
+╔══════════════════╗
+  👥 MENU GRUPO 👥
+╚══════════════════╝
+
+📊 *ESTATÍSTICAS*
+➤ #rankativos
+➤ #inativos [dias]
+➤ #gpinfo
+➤ #admins
+
+📋 *INFORMAÇÕES*
+➤ #regras
+➤ #linkgp
+
+🎂 *ANIVERSÁRIO*
+➤ #aniversario [DD/MM]
+➤ #meuaniversario
+
+💤 *AFK*
+➤ #ausente [mensagem]
+➤ #ativo
+➤ #listarafk
+
+╔══════════════════╗
+   ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU INFO
+    // ===========================================================
+    if (sub === 'info' || sub === 'informações') {
+      return reply(`
+╔══════════════════╗
+  ℹ️ MENU INFO ℹ️
+╚══════════════════╝
+
+🤖 *SOBRE O BOT*
+➤ #info
+➤ #ping
+➤ #dono
+
+📱 *USUÁRIO*
+➤ #sender
+
+📝 *UTILIDADES*
+➤ #imc [peso] [altura]
+➤ #calculadora [expressão]
+➤ #cep [CEP]
+➤ #signo [DD/MM]
+➤ #clima [cidade]
+➤ #horario
+➤ #traduzir [idioma] [texto]
+
+💰 *ASSINATURA*
+➤ !status
+➤ !ativar [dias]
+➤ !cancelar
+
+╔══════════════════╗
+   ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU GOLD
+    // ===========================================================
+    if (sub === 'gold' || sub === 'moedas') {
+      return reply(`
+╔══════════════════╗
+   💰 MENU GOLD 💰
+╚══════════════════╝
+
+💰 *CONSULTAS*
+➤ #gold
+➤ #rankgold
+
+🎁 *RECOMPENSAS*
+➤ #daily
+➤ #minerar_gold
+
+🤝 *TRANSAÇÕES*
+➤ #doargold @user [qtd]
+➤ #roubargold @user
+
+🎲 *APOSTAS*
+➤ #apostar [qtd]
+➤ #cassino [qtd]
+➤ #doublegold [qtd]
+
+╔══════════════════╗
+  ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // SUBMENU NÃO ENCONTRADO
+    // ===========================================================
+    return reply(`
+╔══════════════════╗
+❌ SUBMENU INVÁLIDO ❌
+╚══════════════════╝
+
+Use #menu para ver
+os menus disponíveis:
+
+📌 #menu figurinhas
+📌 #menu download
+📌 #menu admin
+📌 #menu diversão
+📌 #menu grupo
+📌 #menu info
+📌 #menu gold
+
+╔══════════════════╗
+    ⚡ SignaBOT ⚡
+╚══════════════════╝
+    `);
   }
-}
+
+  // ===========================================================
+  // FIGURINHAS 
+  // ===========================================================
+
+  if (command === '#sticker' || command === '#s') {
+
+    const quoted = getQuoted(message)
+    const imageMsg = quoted?.imageMessage || message.message?.imageMessage
+    const videoMsg = quoted?.videoMessage || message.message?.videoMessage
+
+    if (!imageMsg && !videoMsg) {
+      return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
+    }
+
+    await reply('⏳ Criando figurinha...')
+
+    try {
+
+      // =====================================================
+      // 🖼️ IMAGEM → WEBP
+      // =====================================================
+      if (imageMsg) {
+
+        const buffer = await downloadMedia(imageMsg, 'image')
+
+        const webpBuffer = await sharp(buffer)
+          .resize(512, 512, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .webp({ quality: 80 })
+          .toBuffer()
+
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+
+        return
+      }
+
+      // =====================================================
+      // 🎥 VÍDEO → WEBP ANIMADO
+      // =====================================================
+      if (videoMsg) {
+
+        if (videoMsg.seconds > 10) {
+          return reply('❌ O vídeo deve ter no máximo 10 segundos.')
+        }
+
+        const videoBuffer = await downloadMedia(videoMsg, 'video')
+
+        const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
+        const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
+
+        fs.writeFileSync(inputPath, videoBuffer)
+
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions([
+              '-vcodec libwebp',
+              '-vf scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+              '-loop 0',
+              '-ss 00:00:00',
+              '-t 10',
+              '-preset default',
+              '-an',
+              '-vsync 0'
+            ])
+            .toFormat('webp')
+            .save(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+        })
+
+        const webpBuffer = fs.readFileSync(outputPath)
+
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+
+        fs.unlinkSync(inputPath)
+        fs.unlinkSync(outputPath)
+
+        return
+      }
+
+    } catch (err) {
+      console.log('Erro Sticker:', err)
+      return reply('❌ Erro ao criar figurinha.')
+    }
+  }
+
   // ===========================================================
   // DOWNLOADS
   // ===========================================================
