@@ -2610,7 +2610,7 @@ const connectBot = async () => {
           console.log('[ERRO WELCOME]', err);
           // Fallback para texto simples
           await sock.sendMessage(groupId, {
-            text: `👋 Bem-vindo(a) ao grupo!`,
+            text: `👋 Bem-vindo(a) ao grupo @user !`,
             mentions: [participant]
           }).catch(() => {});
         }
