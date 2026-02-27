@@ -217,7 +217,10 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   console.log(`[COMANDO] ${command} de ${sender} - Dono: ${ownerCheck}`);
 
   // Verificar assinatura (pular comandos de assinatura e info)
-  const skipSubCheck = ['!ativar', '!status', '!cancelar', '#ping', '#info', '#dono', '#menu'].includes(command)
+  const skipSubCheck = [
+    '!ativar', '!status', '!cancelar', '!trial',
+    '#ping', '#info', '#dono', '#menu', '#sender', '#horario', '#feedback'
+  ].includes(command)
     || command.startsWith('!') || ownerCheck;
 
   if (isGroup && !skipSubCheck) {
@@ -2052,6 +2055,212 @@ if (command === '#sorteio') {
       addGold(sender, -fine);
       return sock.sendMessage(groupId, { text: `Roubo falhou! Voce perdeu ${fine} golds de multa!`, mentions: [sender] });
     }
+  }
+
+  // ===========================================================
+  // INFO / PING / DONO / SENDER
+  // ===========================================================
+
+  if (command === '#ping') {
+    const start = Date.now();
+    await reply('🏓 Pong!');
+    const end = Date.now();
+    return reply(`⚡ *Latência:* ${end - start}ms\n✅ Bot online e funcionando!`);
+  }
+
+  if (command === '#info') {
+    return reply(`╔══════════════════╗
+     🤖 SIGNABOT INFO 🤖
+╚══════════════════╝
+
+🤖 *Nome:* ${BOT_NAME}
+📱 *Prefixo:* # e /
+⚙️ *Versão:* 2.0
+🌐 *Plataforma:* WhatsApp
+
+📌 *Funcionalidades:*
+➤ Gerenciamento de grupos
+➤ Figurinhas e conversores
+➤ Downloads (YouTube/TikTok/Instagram)
+➤ Sistema de gold
+➤ Diversão e jogos
+➤ Sistema de assinatura
+
+💬 *Suporte:*
+➤ wa.me/${OWNER_NUMBER}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#dono') {
+    return reply(`╔══════════════════╗
+     👑 DONO DO BOT 👑
+╚══════════════════╝
+
+👤 *Dono:* SignaBot Owner
+📱 *Contato:* wa.me/${OWNER_NUMBER}
+💬 *Para contratar ou suporte:*
+➤ Acesse o link acima
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#sender') {
+    return reply(`╔══════════════════╗
+     📱 SUAS INFOS 📱
+╚══════════════════╝
+
+👤 *Nome:* ${senderName}
+📞 *Número:* ${sender.split('@')[0]}
+🆔 *JID:* ${sender}
+${isGroup ? `👥 *Grupo:* ${groupId}` : '💬 *Chat privado*'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  // ===========================================================
+  // UTILIDADES - IMC / CALCULADORA / CEP / SIGNO / CLIMA / HORÁRIO / TRADUZIR
+  // ===========================================================
+
+  if (command === '#imc') {
+    if (args.length < 2) return reply('❌ Use: #imc [peso em kg] [altura em m]\nEx: #imc 70 1.75');
+    const peso = parseFloat(args[0].replace(',', '.'));
+    const altura = parseFloat(args[1].replace(',', '.'));
+    if (isNaN(peso) || isNaN(altura) || altura <= 0) return reply('❌ Valores inválidos. Ex: #imc 70 1.75');
+    const imc = peso / (altura * altura);
+    let classificacao = '';
+    if (imc < 18.5) classificacao = 'Abaixo do peso';
+    else if (imc < 25) classificacao = 'Peso normal';
+    else if (imc < 30) classificacao = 'Sobrepeso';
+    else if (imc < 35) classificacao = 'Obesidade grau I';
+    else if (imc < 40) classificacao = 'Obesidade grau II';
+    else classificacao = 'Obesidade grau III (mórbida)';
+    return reply(`*Cálculo de IMC*\n\n⚖️ Peso: ${peso}kg\n📏 Altura: ${altura}m\n📊 IMC: ${imc.toFixed(2)}\n🏷️ Classificação: ${classificacao}`);
+  }
+
+  if (command === '#calculadora' || command === '#calc') {
+    if (!args.length) return reply('❌ Use: #calculadora [expressão]\nEx: #calculadora 2+2*3');
+    const expr = args.join(' ').replace(/[^0-9+\-*/().\s]/g, '');
+    try {
+      // eslint-disable-next-line no-new-func
+      const result = Function('"use strict"; return (' + expr + ')')();
+      return reply(`🧮 *Calculadora*\n\n📝 Expressão: ${expr}\n✅ Resultado: *${result}*`);
+    } catch {
+      return reply('❌ Expressão inválida. Use operadores: + - * /\nEx: #calculadora (5+3)*2');
+    }
+  }
+
+  if (command === '#cep') {
+    if (!args[0]) return reply('❌ Use: #cep [CEP]\nEx: #cep 01310100');
+    const cep = args[0].replace(/\D/g, '');
+    if (cep.length !== 8) return reply('❌ CEP inválido. Deve ter 8 dígitos.');
+    try {
+      const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`, { timeout: 10000 });
+      if (data.erro) return reply('❌ CEP não encontrado.');
+      return reply(`*Consulta de CEP*\n\n📮 CEP: ${data.cep}\n🏘️ Logradouro: ${data.logradouro || '-'}\n🏙️ Bairro: ${data.bairro || '-'}\n🌆 Cidade: ${data.localidade}\n🗺️ Estado: ${data.uf}\n🌎 Região: ${data.regiao || '-'}`);
+    } catch {
+      return reply('❌ Erro ao consultar CEP. Tente novamente.');
+    }
+  }
+
+  if (command === '#signo') {
+    if (!args[0]) return reply('❌ Use: #signo [DD/MM]\nEx: #signo 25/12');
+    const parts = args[0].split('/');
+    const dia = parseInt(parts[0]);
+    const mes = parseInt(parts[1]);
+    if (!dia || !mes || dia > 31 || mes > 12) return reply('❌ Data inválida. Use DD/MM');
+    const signos = [
+      { nome: 'Capricórnio', inicio: [12, 22], fim: [1, 19] },
+      { nome: 'Aquário', inicio: [1, 20], fim: [2, 18] },
+      { nome: 'Peixes', inicio: [2, 19], fim: [3, 20] },
+      { nome: 'Áries', inicio: [3, 21], fim: [4, 19] },
+      { nome: 'Touro', inicio: [4, 20], fim: [5, 20] },
+      { nome: 'Gêmeos', inicio: [5, 21], fim: [6, 20] },
+      { nome: 'Câncer', inicio: [6, 21], fim: [7, 22] },
+      { nome: 'Leão', inicio: [7, 23], fim: [8, 22] },
+      { nome: 'Virgem', inicio: [8, 23], fim: [9, 22] },
+      { nome: 'Libra', inicio: [9, 23], fim: [10, 22] },
+      { nome: 'Escorpião', inicio: [10, 23], fim: [11, 21] },
+      { nome: 'Sagitário', inicio: [11, 22], fim: [12, 21] },
+    ];
+    let signo = 'Capricórnio';
+    for (const s of signos) {
+      const [mi, di] = s.inicio;
+      const [mf, df] = s.fim;
+      if ((mes === mi && dia >= di) || (mes === mf && dia <= df)) { signo = s.nome; break; }
+    }
+    return reply(`*Seu Signo*\n\n📅 Data: ${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')}\n✨ Signo: *${signo}*`);
+  }
+
+  if (command === '#clima') {
+    if (!args.length) return reply('❌ Use: #clima [cidade]\nEx: #clima Manaus');
+    const city = encodeURIComponent(args.join(' '));
+    try {
+      const { data } = await axios.get(
+        `https://wttr.in/${city}?format=j1`,
+        { timeout: 10000 }
+      );
+      const current = data.current_condition?.[0];
+      const area = data.nearest_area?.[0];
+      if (!current) return reply('❌ Cidade não encontrada.');
+      const cityName = area?.areaName?.[0]?.value || args.join(' ');
+      const country = area?.country?.[0]?.value || '';
+      const temp = current.temp_C;
+      const feels = current.FeelsLikeC;
+      const desc = current.weatherDesc?.[0]?.value || '';
+      const humidity = current.humidity;
+      const wind = current.windspeedKmph;
+      return reply(`*Clima em ${cityName}, ${country}*\n\n🌡️ Temperatura: ${temp}°C\n🤔 Sensação: ${feels}°C\n☁️ Condição: ${desc}\n💧 Umidade: ${humidity}%\n💨 Vento: ${wind} km/h`);
+    } catch {
+      return reply('❌ Erro ao buscar clima. Verifique o nome da cidade.');
+    }
+  }
+
+  if (command === '#horario') {
+    const agora = new Date();
+    const dataFmt = agora.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const horaFmt = agora.toLocaleTimeString('pt-BR');
+    return reply(`*Horário Atual*\n\n📅 Data: ${dataFmt}\n🕐 Hora: ${horaFmt}\n🌐 Fuso: America/Sao_Paulo`);
+  }
+
+  if (command === '#traduzir' || command === '#tr') {
+    if (args.length < 2) return reply('❌ Use: #traduzir [idioma] [texto]\nIdiomas: en (inglês), es (espanhol), fr (francês), de (alemão), pt (português)\nEx: #traduzir en Olá mundo');
+    const lang = args[0].toLowerCase();
+    const text = args.slice(1).join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=pt|${lang}`,
+        { timeout: 10000 }
+      );
+      const translated = data?.responseData?.translatedText;
+      if (!translated || data.responseStatus !== 200) return reply('❌ Erro ao traduzir. Verifique o idioma e tente novamente.');
+      return reply(`*Tradução*\n\n📝 Original (pt): ${text}\n🌐 Traduzido (${lang}): ${translated}`);
+    } catch {
+      return reply('❌ Erro ao traduzir. Tente novamente mais tarde.');
+    }
+  }
+
+  // ===========================================================
+  // #SHIP - COMPATIBILIDADE ENTRE DOIS USUÁRIOS
+  // ===========================================================
+
+  if (command === '#ship') {
+    const mentioned = getMentioned(message);
+    if (mentioned.length < 2) return reply('❌ Use: #ship @usuario1 @usuario2');
+    const p1 = mentioned[0];
+    const p2 = mentioned[1];
+    const pct = Math.floor(Math.random() * 101);
+    let emoji = pct >= 80 ? '💕' : pct >= 60 ? '❤️' : pct >= 40 ? '💛' : pct >= 20 ? '💔' : '❌';
+    return sock.sendMessage(groupId, {
+      text: `*Compatibilidade de Casal*\n\n👤 @${p1.split('@')[0]}\n💞 x\n👤 @${p2.split('@')[0]}\n\n${emoji} Compatibilidade: *${pct}%*`,
+      mentions: [p1, p2],
+    });
   }
 
   // ===========================================================
