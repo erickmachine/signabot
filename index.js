@@ -98,6 +98,8 @@ let cargos        = loadDB('cargos');       // { groupId: { userId: 'admin'|'mod
 let afkList       = loadDB('afkList');      // { userId: { msg, time } }
 let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
 let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
+let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, image, creator } } }
+let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
 
 // ============================================================
 // HELPERS GERAIS
@@ -219,7 +221,8 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   // Verificar assinatura (pular comandos de assinatura e info)
   const skipSubCheck = [
     '#ativar', '#status', '#cancelar', '#trial',
-    '#ping', '#info', '#dono', '#menu', '#sender', '#horario', '#feedback'
+    '#ping', '#info', '#dono', '#menu', '#sender', '#horario', '#feedback',
+    '#dicatech', '#vercomandos', '#listacmd'
   ].includes(command) || ownerCheck;
 
   if (isGroup && !skipSubCheck) {
@@ -310,6 +313,8 @@ if (command === '#status') {
 ➤ #menu grupo
 ➤ #menu info
 ➤ #menu gold
+➤ #menu tecnologia
+➤ #menu comandos
 
 ⚡ *COMANDOS RÁPIDOS*
 ➤ #ping
@@ -624,6 +629,87 @@ if (command === '#status') {
     }
 
     // ===========================================================
+    // MENU TECNOLOGIA
+    // ===========================================================
+    if (sub === 'tecnologia' || sub === 'tech') {
+      return reply(`
+╔══════════════════╗
+     🖥️ MENU TECNOLOGIA 🖥️
+╚══════════════════╝
+
+🌐 *INTERNET*
+➤ #testarnet
+➤ #velocidade
+➤ #meudns
+➤ #meuip
+
+🔒 *SEGURANÇA*
+➤ #siteseguro [url]
+➤ #verificarlink [url]
+➤ #senhasegura [senha]
+➤ #gerarsenha [tamanho]
+
+📡 *REDES & MODEM*
+➤ #resetarmodem
+➤ #melhorarsinal
+➤ #pingtest [host]
+➤ #portacheck [porta]
+
+📱 *DISPOSITIVOS*
+➤ #limparcache
+➤ #economizarbateria
+➤ #liberarmemoria
+➤ #modoaviao
+
+🛠️ *DICAS GERAIS*
+➤ #dicatech
+➤ #atalhos [windows/mac/android]
+➤ #formatarpc
+➤ #atualizardriver
+➤ #vpn
+➤ #whoisdominio [domínio]
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU COMANDOS PERSONALIZADOS
+    // ===========================================================
+    if (sub === 'comandos' || sub === 'cmd') {
+      return reply(`
+╔══════════════════╗
+     📝 COMANDOS PERSONALIZADOS 📝
+╚══════════════════╝
+
+📌 *CRIAR COMANDO*
+➤ !comando [nome] [texto]
+   (pode enviar com imagem!)
+
+📋 *GERENCIAR*
+➤ #vercomandos
+➤ #delcomando [nome]
+
+💡 *COMO USAR*
+1. Envie uma imagem com a legenda:
+   !comando saudacao Olá pessoal!
+2. Ou sem imagem:
+   !comando regra1 Não faça spam
+3. Para executar o comando:
+   !saudacao  ou  !regra1
+
+⚠️ O texto fica EXATAMENTE como
+   você digitou (com formatação).
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
     // SUBMENU NÃO ENCONTRADO
     // ===========================================================
     return reply(`
@@ -641,6 +727,8 @@ os menus disponíveis:
 📌 #menu grupo
 📌 #menu info
 📌 #menu gold
+📌 #menu tecnologia
+📌 #menu comandos
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
@@ -2445,6 +2533,907 @@ ${isGroup ? `👥 *Grupo:* ${groupId}` : '💬 *Chat privado*'}
   }
 
   // ===========================================================
+  // TECNOLOGIA - TODOS OS COMANDOS
+  // ===========================================================
+
+  if (command === '#testarnet' || command === '#velocidade') {
+    return reply(`
+╔══════════════════╗
+     🌐 TESTE DE VELOCIDADE 🌐
+╚══════════════════╝
+
+📡 *Como testar sua velocidade:*
+
+1️⃣ *Pelo navegador:*
+   ➤ Acesse: https://fast.com
+   ➤ Ou: https://speedtest.net
+   ➤ Clique em "Iniciar" e aguarde
+
+2️⃣ *Pelo celular:*
+   ➤ Baixe o app "Speedtest by Ookla"
+   ➤ Disponível na Play Store e App Store
+   ➤ Abra e toque em "Iniciar"
+
+3️⃣ *Entendendo os resultados:*
+   ➤ *Download:* Velocidade de recebimento
+   ➤ *Upload:* Velocidade de envio
+   ➤ *Ping:* Tempo de resposta (menor = melhor)
+   ➤ *Jitter:* Variação do ping
+
+4️⃣ *Velocidades ideais:*
+   ➤ Navegar: 5-10 Mbps
+   ➤ Streaming HD: 25 Mbps
+   ➤ Streaming 4K: 50 Mbps
+   ➤ Jogos online: 25+ Mbps, Ping < 50ms
+   ➤ Videochamada: 10 Mbps
+
+💡 *Dica:* Teste conectado ao Wi-Fi E
+   aos dados móveis para comparar!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#siteseguro' || command === '#verificarlink') {
+    if (!args.length) return reply('❌ Use: #siteseguro [url]\nEx: #siteseguro https://google.com');
+    const url = args[0];
+    
+    let analise = [];
+    
+    // Verificações básicas de segurança
+    const isHttps = url.startsWith('https://');
+    analise.push(isHttps ? '✅ Usa HTTPS (conexão segura)' : '⚠️ NÃO usa HTTPS (conexão insegura!)');
+    
+    // Verificar domínios suspeitos
+    const suspiciousPatterns = [
+      /bit\.ly/i, /tinyurl/i, /goo\.gl/i, /t\.co/i, /is\.gd/i,
+      /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/, // IP direto
+      /free.*prize/i, /win.*money/i, /click.*here/i
+    ];
+    const isSuspicious = suspiciousPatterns.some(p => p.test(url));
+    analise.push(isSuspicious ? '⚠️ URL suspeita (encurtador ou padrão duvidoso)' : '✅ URL com formato normal');
+    
+    // Verificar extensão suspeita
+    const suspiciousExt = ['.exe', '.bat', '.cmd', '.scr', '.js', '.vbs', '.msi', '.apk'];
+    const hasSuspiciousExt = suspiciousExt.some(ext => url.toLowerCase().includes(ext));
+    analise.push(hasSuspiciousExt ? '🚨 CUIDADO! Link pode ser um arquivo executável!' : '✅ Não aponta para executável');
+    
+    // Verificar domínios conhecidos
+    const trustedDomains = ['google.com', 'youtube.com', 'facebook.com', 'instagram.com', 'twitter.com', 'github.com', 'microsoft.com', 'apple.com', 'amazon.com', 'netflix.com', 'whatsapp.com', 'wikipedia.org', 'linkedin.com'];
+    const isTrusted = trustedDomains.some(d => url.includes(d));
+    analise.push(isTrusted ? '✅ Domínio reconhecido e confiável' : 'ℹ️ Domínio não está na lista de conhecidos');
+    
+    // Verificar caracteres estranhos (homograph attack)
+    const hasWeirdChars = /[^\x00-\x7F]/.test(url);
+    analise.push(hasWeirdChars ? '🚨 ALERTA! Contém caracteres incomuns (possível phishing)' : '✅ Sem caracteres suspeitos');
+
+    // Score de segurança
+    let score = 50;
+    if (isHttps) score += 20;
+    if (!isSuspicious) score += 10;
+    if (!hasSuspiciousExt) score += 10;
+    if (isTrusted) score += 15;
+    if (!hasWeirdChars) score += 10;
+    if (!isHttps) score -= 20;
+    if (isSuspicious) score -= 15;
+    if (hasSuspiciousExt) score -= 25;
+    if (hasWeirdChars) score -= 20;
+    score = Math.max(0, Math.min(100, score));
+    
+    let status = score >= 80 ? '🟢 SEGURO' : score >= 50 ? '🟡 ATENÇÃO' : '🔴 PERIGOSO';
+
+    return reply(`
+╔══════════════════╗
+     🔒 ANÁLISE DE SEGURANÇA 🔒
+╚══════════════════╝
+
+🌐 *URL:* ${url}
+
+📊 *Score:* ${score}/100 — ${status}
+
+📋 *Análise:*
+${analise.join('\n')}
+
+🔍 *Para análise avançada:*
+➤ https://www.virustotal.com
+➤ https://transparencyreport.google.com
+➤ https://urlscan.io
+
+💡 *Dicas de segurança:*
+➤ Nunca clique em links desconhecidos
+➤ Verifique se tem cadeado (HTTPS)
+➤ Desconfie de ofertas muito boas
+➤ Não insira dados pessoais em sites duvidosos
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#senhasegura') {
+    if (!args.length) return reply('❌ Use: #senhasegura [sua senha]\nEx: #senhasegura MinhaSenh@123');
+    const senha = args.join(' ');
+    let score = 0;
+    let dicas = [];
+    
+    if (senha.length >= 8) { score += 20; } else { dicas.push('➤ Use pelo menos 8 caracteres'); }
+    if (senha.length >= 12) { score += 10; }
+    if (senha.length >= 16) { score += 10; }
+    if (/[a-z]/.test(senha)) { score += 10; } else { dicas.push('➤ Adicione letras minúsculas'); }
+    if (/[A-Z]/.test(senha)) { score += 15; } else { dicas.push('➤ Adicione letras MAIÚSCULAS'); }
+    if (/\d/.test(senha)) { score += 15; } else { dicas.push('➤ Adicione números'); }
+    if (/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(senha)) { score += 20; } else { dicas.push('➤ Adicione caracteres especiais (!@#$%)'); }
+    
+    // Penalidades
+    if (/^[0-9]+$/.test(senha)) { score -= 20; dicas.push('➤ Não use apenas números'); }
+    if (/(.)\1{2,}/.test(senha)) { score -= 10; dicas.push('➤ Evite caracteres repetidos (aaa, 111)'); }
+    if (/123|abc|qwerty|senha|password/i.test(senha)) { score -= 20; dicas.push('➤ Evite sequências comuns'); }
+    
+    score = Math.max(0, Math.min(100, score));
+    let nivel = score >= 80 ? '🟢 FORTE' : score >= 50 ? '🟡 MÉDIA' : '🔴 FRACA';
+
+    return reply(`
+╔══════════════════╗
+     🔐 ANÁLISE DE SENHA 🔐
+╚══════════════════╝
+
+📊 *Força:* ${score}/100 — ${nivel}
+📏 *Tamanho:* ${senha.length} caracteres
+
+${dicas.length ? '💡 *Sugestões de melhoria:*\n' + dicas.join('\n') : '✅ Sua senha está boa!'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#gerarsenha') {
+    const tamanho = parseInt(args[0]) || 16;
+    if (tamanho < 6 || tamanho > 64) return reply('❌ Tamanho deve ser entre 6 e 64.');
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*()-_=+';
+    let senha = '';
+    for (let i = 0; i < tamanho; i++) {
+      senha += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return reply(`
+╔══════════════════╗
+     🔑 GERADOR DE SENHA 🔑
+╚══════════════════╝
+
+🔐 *Sua senha gerada:*
+\`\`\`${senha}\`\`\`
+
+📏 Tamanho: ${tamanho} caracteres
+🛡️ Força: ALTA
+
+💡 *Dica:* Copie e salve em um
+   gerenciador de senhas!
+
+╔══════════════════╝
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#resetarmodem') {
+    return reply(`
+╔══════════════════╗
+     📡 RESETAR MODEM/ROTEADOR 📡
+╚══════════════════╝
+
+🔄 *Método 1 — Reset Simples:*
+1. Desligue o modem da tomada
+2. Aguarde 30 segundos
+3. Ligue novamente
+4. Espere 2-3 minutos para reconectar
+
+🔧 *Método 2 — Reset pelo Botão:*
+1. Encontre o botão "Reset" (geralmente atrás)
+2. Use um palito ou clipe
+3. Pressione e segure por 10 segundos
+4. Solte e aguarde reiniciar
+⚠️ AVISO: Isso apaga TODAS as configurações!
+
+💻 *Método 3 — Pelo Navegador:*
+1. Abra o navegador
+2. Digite: 192.168.0.1 ou 192.168.1.1
+3. Login padrão: admin / admin
+4. Vá em "Sistema" ou "Manutenção"
+5. Clique em "Reiniciar" ou "Restaurar"
+
+📞 *Senhas padrão dos modems:*
+➤ Vivo: admin / vivo12345
+➤ Claro: admin / gvt12345
+➤ Oi: admin / admin
+➤ NET: admin / admin ou NET_XXXX
+➤ TIM: admin / admin
+
+💡 *Dica:* Sempre anote suas configurações
+   de Wi-Fi ANTES de resetar!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#melhorarsinal') {
+    return reply(`
+╔══════════════════╗
+     📶 MELHORAR SINAL WI-FI 📶
+╚══════════════════╝
+
+📍 *POSICIONAMENTO*
+➤ Coloque o roteador no centro da casa
+➤ Mantenha elevado (em cima de móvel)
+➤ Longe de paredes grossas e espelhos
+➤ Longe de micro-ondas e telefones
+
+📡 *CONFIGURAÇÕES*
+➤ Mude o canal do Wi-Fi (1, 6 ou 11)
+➤ Use banda 5GHz para perto do roteador
+➤ Use banda 2.4GHz para longe
+➤ Altere para canal menos congestionado
+
+🔧 *SOLUÇÕES*
+➤ Use repetidor/extensor de sinal
+➤ Use sistema Mesh para casas grandes
+➤ Powerline (internet pela tomada)
+➤ Cabo ethernet para dispositivos fixos
+
+📱 *NO CELULAR*
+➤ Esqueça a rede e reconecte
+➤ Desligue e ligue o Wi-Fi
+➤ Reinicie o celular
+➤ Limpe o cache de rede
+
+💡 *Dica:* Use o app "WiFi Analyzer"
+   para encontrar o melhor canal!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#meuip') {
+    try {
+      const { data } = await axios.get('https://api.ipify.org?format=json', { timeout: 10000 });
+      return reply(`
+╔══════════════════╗
+     🌐 SEU IP PÚBLICO 🌐
+╚══════════════════╝
+
+📡 *IP:* ${data.ip}
+
+💡 *O que é IP?*
+É o endereço do seu dispositivo
+na internet. Cada conexão tem um.
+
+⚠️ *Dica de segurança:*
+➤ Não compartilhe seu IP publicamente
+➤ Use VPN para proteger sua privacidade
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply('❌ Erro ao obter IP. Tente novamente.');
+    }
+  }
+
+  if (command === '#meudns') {
+    return reply(`
+╔══════════════════╗
+     🌐 CONFIGURAR DNS 🌐
+╚══════════════════╝
+
+📡 *DNS Recomendados:*
+
+☁️ *Cloudflare (mais rápido):*
+➤ Primário: 1.1.1.1
+➤ Secundário: 1.0.0.1
+
+🔍 *Google:*
+➤ Primário: 8.8.8.8
+➤ Secundário: 8.8.4.4
+
+🛡️ *OpenDNS (com filtro):*
+➤ Primário: 208.67.222.222
+➤ Secundário: 208.67.220.220
+
+👨‍👩‍👧 *AdGuard (bloqueia anúncios):*
+➤ Primário: 94.140.14.14
+➤ Secundário: 94.140.15.15
+
+📱 *Como configurar no Android:*
+1. Configurações > Wi-Fi
+2. Toque na sua rede > Avançado
+3. Mude DNS para "Estático"
+4. Insira os endereços acima
+
+💻 *Como configurar no PC:*
+1. Painel de Controle > Rede
+2. Propriedades do adaptador
+3. Protocolo IPv4 > Propriedades
+4. "Usar os seguintes endereços DNS"
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#pingtest') {
+    const host = args[0] || 'google.com';
+    try {
+      const start = Date.now();
+      await axios.get(`https://${host}`, { timeout: 10000 });
+      const ping = Date.now() - start;
+      let status = ping < 100 ? '🟢 Excelente' : ping < 300 ? '🟡 Bom' : '🔴 Lento';
+      return reply(`
+╔══════════════════╗
+     📡 PING TEST 📡
+╚══════════════════╝
+
+🌐 *Host:* ${host}
+⏱️ *Ping:* ${ping}ms
+📊 *Status:* ${status}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply(`❌ Não foi possível alcançar ${host}. Verifique o endereço.`);
+    }
+  }
+
+  if (command === '#limparcache') {
+    return reply(`
+╔══════════════════╗
+     🧹 LIMPAR CACHE 🧹
+╚══════════════════╝
+
+📱 *Android:*
+➤ Configurações > Armazenamento > Cache
+➤ Ou por app: Config > Apps > [App] > Limpar cache
+
+🍎 *iPhone:*
+➤ Safari: Ajustes > Safari > Limpar dados
+➤ Apps: Deletar e reinstalar o app
+
+💻 *Windows:*
+➤ Win+R > digite "temp" > deletar tudo
+➤ Win+R > digite "%temp%" > deletar tudo
+➤ Limpeza de Disco (cleanmgr)
+
+🌐 *Navegadores:*
+➤ Chrome: Ctrl+Shift+Del
+➤ Firefox: Ctrl+Shift+Del
+➤ Edge: Ctrl+Shift+Del
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#economizarbateria') {
+    return reply(`
+╔══════════════════╗
+     🔋 ECONOMIZAR BATERIA 🔋
+╚══════════════════╝
+
+📱 *Dicas essenciais:*
+➤ Reduza o brilho da tela
+➤ Ative o modo economia de energia
+➤ Desative GPS quando não usar
+➤ Desative Bluetooth e NFC
+➤ Use Wi-Fi ao invés de dados móveis
+➤ Feche apps em segundo plano
+➤ Desative atualizações automáticas
+➤ Use modo escuro (telas AMOLED)
+➤ Reduza o tempo de tela ligada
+➤ Desative assistente de voz
+
+⚡ *Apps que mais gastam:*
+➤ Redes sociais (Facebook, Instagram)
+➤ Jogos
+➤ Streaming de vídeo
+➤ GPS/Mapas
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#liberarmemoria') {
+    return reply(`
+╔══════════════════╗
+     💾 LIBERAR MEMÓRIA 💾
+╚══════════════════╝
+
+📱 *Android:*
+➤ Desinstale apps não usados
+➤ Limpe cache dos apps
+➤ Mova fotos para nuvem (Google Fotos)
+➤ Apague downloads antigos
+➤ Limpe conversas do WhatsApp
+➤ Use "Files by Google" para limpeza
+
+🍎 *iPhone:*
+➤ Ajustes > Geral > Armazenamento
+➤ Descarregue apps não usados
+➤ Limpe fotos e vídeos
+➤ Limpe anexos do WhatsApp/Telegram
+
+💻 *PC:*
+➤ Desinstale programas não usados
+➤ Use Limpeza de Disco
+➤ Mova arquivos para HD externo
+➤ Esvazie a lixeira regularmente
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#modoaviao') {
+    return reply(`
+╔══════════════════╗
+     ✈️ MODO AVIÃO — DICAS ✈️
+╚══════════════════╝
+
+📱 *Usos inteligentes:*
+
+1️⃣ *Carregar mais rápido*
+   Ative modo avião ao carregar e
+   o celular carrega até 2x mais rápido!
+
+2️⃣ *Resolver problemas de rede*
+   Sem sinal? Ative e desative o modo
+   avião — funciona como um reset!
+
+3️⃣ *Economizar bateria*
+   Em áreas sem sinal, ative para
+   evitar que o celular fique buscando rede.
+
+4️⃣ *Sem interrupções*
+   Perfeito para estudar, dormir ou
+   quando precisa de foco total.
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#dicatech') {
+    const dicas = [
+      '💡 Use Ctrl+Shift+T para reabrir abas fechadas no navegador!',
+      '💡 No Android, pressione e segure o botão de power 5x rapidamente para ligar para emergência.',
+      '💡 No WhatsApp, digite *texto* para negrito, _texto_ para itálico e ~texto~ para tachado.',
+      '💡 Ctrl+L seleciona toda a barra de endereço do navegador instantaneamente.',
+      '💡 Use o Google como calculadora: digite a conta direto na busca!',
+      '💡 Print Screen + Windows abre a ferramenta de recorte no Windows 11.',
+      '💡 No YouTube, pressione K para pausar, J para voltar 10s e L para avançar 10s.',
+      '💡 Digite "chrome://flags" no Chrome para acessar funções experimentais.',
+      '💡 No Android, fale "Ok Google, onde está meu celular?" de outro dispositivo para encontrá-lo.',
+      '💡 Ctrl+F permite buscar qualquer palavra em qualquer página ou documento.',
+      '💡 Use sites como haveibeenpwned.com para verificar se seu email já foi vazado.',
+      '💡 No WhatsApp Web, Ctrl+Shift+M muta uma conversa rapidamente.',
+      '💡 Alt+Tab alterna entre janelas abertas no Windows.',
+      '💡 No celular, sacudir o aparelho desfaz a última ação no iPhone.',
+      '💡 Use 2FA (autenticação em dois fatores) em TODAS as suas contas importantes!',
+      '💡 Ctrl+D salva a página atual nos favoritos do navegador.',
+      '💡 No Google Maps, segure um local para ver o trânsito em tempo real.',
+      '💡 Windows+V abre o histórico da área de transferência (clipboard).',
+      '💡 Use DNS 1.1.1.1 (Cloudflare) para navegar mais rápido!',
+      '💡 No WhatsApp, envie uma mensagem para si mesmo — funciona como bloco de notas!',
+    ];
+    return reply(dicas[Math.floor(Math.random() * dicas.length)]);
+  }
+
+  if (command === '#atalhos') {
+    const sistema = (args[0] || 'windows').toLowerCase();
+    
+    if (sistema === 'windows' || sistema === 'win') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ ATALHOS WINDOWS ⌨️
+╚══════════════════╝
+
+📋 *Básicos:*
+➤ Ctrl+C — Copiar
+➤ Ctrl+V — Colar
+➤ Ctrl+Z — Desfazer
+➤ Ctrl+A — Selecionar tudo
+➤ Ctrl+S — Salvar
+➤ Alt+F4 — Fechar janela
+
+🖥️ *Sistema:*
+➤ Win+E — Explorador de arquivos
+➤ Win+D — Mostrar desktop
+➤ Win+L — Bloquear PC
+➤ Win+I — Configurações
+➤ Win+V — Área de transferência
+➤ Win+PrintScreen — Captura de tela
+➤ Ctrl+Shift+Esc — Gerenciador de tarefas
+
+🌐 *Navegador:*
+➤ Ctrl+T — Nova aba
+➤ Ctrl+W — Fechar aba
+➤ Ctrl+Shift+T — Reabrir aba
+➤ Ctrl+L — Barra de endereço
+➤ F5 — Atualizar página
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+    
+    if (sistema === 'mac' || sistema === 'apple') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ ATALHOS MAC ⌨️
+╚══════════════════╝
+
+📋 *Básicos:*
+➤ Cmd+C — Copiar
+➤ Cmd+V — Colar
+➤ Cmd+Z — Desfazer
+➤ Cmd+A — Selecionar tudo
+➤ Cmd+S — Salvar
+➤ Cmd+Q — Fechar app
+
+🖥️ *Sistema:*
+➤ Cmd+Space — Spotlight
+➤ Cmd+Tab — Alternar apps
+➤ Cmd+Shift+3 — Screenshot
+➤ Cmd+Shift+4 — Screenshot parcial
+➤ Cmd+Option+Esc — Forçar saída
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+
+    if (sistema === 'android' || sistema === 'celular') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ DICAS ANDROID ⌨️
+╚══════════════════╝
+
+📱 *Atalhos úteis:*
+➤ Power 2x — Abrir câmera
+➤ Power 5x — Emergência (SOS)
+➤ Vol- + Power — Screenshot
+➤ Segurar app — Atalhos rápidos
+➤ Arrastar 2 dedos — Painel rápido
+
+⚡ *Gestos:*
+➤ Deslizar de baixo — Voltar ao início
+➤ Deslizar do lado — Voltar
+➤ Deslizar de baixo + segurar — Apps recentes
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+
+    return reply('❌ Use: #atalhos [windows/mac/android]');
+  }
+
+  if (command === '#formatarpc') {
+    return reply(`
+╔══════════════════╗
+     💻 FORMATAR PC 💻
+╚══════════════════╝
+
+⚠️ *ANTES DE FORMATAR:*
+➤ Faça backup de TODOS os arquivos!
+➤ Salve senhas e favoritos
+➤ Anote drivers necessários
+➤ Tenha pendrive com Windows (8GB+)
+
+🔧 *Passo a passo:*
+1. Baixe a ISO do Windows em:
+   microsoft.com/software-download
+2. Use o "Media Creation Tool"
+3. Crie um pendrive bootável
+4. Reinicie o PC e acesse a BIOS
+   (F2, F12, Del ou Esc ao ligar)
+5. Coloque o pendrive como boot primário
+6. Siga as instruções de instalação
+7. Escolha "Instalação personalizada"
+8. Formate a partição desejada
+9. Instale o Windows
+
+📦 *Após formatar:*
+➤ Instale drivers (chipset, vídeo, rede)
+➤ Ative o Windows
+➤ Instale antivírus
+➤ Restaure seus backups
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#atualizardriver') {
+    return reply(`
+╔══════════════════╗
+     🔄 ATUALIZAR DRIVERS 🔄
+╚══════════════════╝
+
+💻 *Windows:*
+1. Win+X > Gerenciador de Dispositivos
+2. Clique com direito no dispositivo
+3. "Atualizar driver"
+4. "Pesquisar automaticamente"
+
+🎮 *Placa de Vídeo:*
+➤ NVIDIA: nvidia.com/drivers
+➤ AMD: amd.com/support
+➤ Intel: intel.com/drivers
+
+🔧 *Ferramentas automáticas:*
+➤ Driver Booster (IObit)
+➤ Snappy Driver Installer
+➤ Windows Update (mais seguro)
+
+⚠️ *Dicas:*
+➤ Crie ponto de restauração antes
+➤ Baixe drivers APENAS do site oficial
+➤ Nunca use sites de terceiros!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#vpn') {
+    return reply(`
+╔══════════════════╗
+     🛡️ VPN — O QUE É? 🛡️
+╚══════════════════╝
+
+❓ *O que é VPN?*
+➤ Rede Privada Virtual
+➤ Protege sua conexão criptografando
+➤ Esconde seu IP real
+➤ Permite acessar conteúdo de outros países
+
+📱 *VPNs Grátis Confiáveis:*
+➤ ProtonVPN (sem limite de dados)
+➤ Windscribe (10GB/mês)
+➤ Cloudflare WARP (1.1.1.1 app)
+
+💰 *VPNs Pagas (melhores):*
+➤ NordVPN
+➤ ExpressVPN
+➤ Surfshark
+➤ Mullvad
+
+⚠️ *Cuidado com:*
+➤ VPNs grátis desconhecidas
+➤ VPNs que pedem muitas permissões
+➤ VPNs sem política de no-log
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#whoisdominio') {
+    if (!args.length) return reply('❌ Use: #whoisdominio [domínio]\nEx: #whoisdominio google.com');
+    const dominio = args[0].replace(/https?:\/\//, '').split('/')[0];
+    try {
+      const { data } = await axios.get(`https://api.api-ninjas.com/v1/whois?domain=${encodeURIComponent(dominio)}`, {
+        timeout: 10000,
+        headers: { 'X-Api-Key': 'free' }
+      });
+      
+      return reply(`
+╔══════════════════╗
+     🌐 WHOIS — ${dominio} 🌐
+╚══════════════════╝
+
+📛 *Domínio:* ${data.domain_name || dominio}
+📅 *Criado em:* ${data.creation_date ? new Date(data.creation_date * 1000).toLocaleDateString('pt-BR') : 'N/D'}
+📅 *Expira em:* ${data.expiration_date ? new Date(data.expiration_date * 1000).toLocaleDateString('pt-BR') : 'N/D'}
+🏢 *Registrador:* ${data.registrar || 'N/D'}
+🌍 *DNS:* ${Array.isArray(data.name_servers) ? data.name_servers.slice(0, 3).join(', ') : 'N/D'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply(`
+╔══════════════════╗
+     🌐 WHOIS — ${dominio} 🌐
+╚══════════════════╝
+
+ℹ️ Não foi possível consultar o WHOIS.
+
+🔍 *Consulte manualmente:*
+➤ https://who.is/${dominio}
+➤ https://registro.br/tecnologia/ferramentas/whois/
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+  }
+
+  if (command === '#portacheck') {
+    const porta = parseInt(args[0]);
+    if (!porta || porta < 1 || porta > 65535) return reply('❌ Use: #portacheck [porta]\nEx: #portacheck 80\nPortas comuns: 80 (HTTP), 443 (HTTPS), 21 (FTP), 22 (SSH), 3306 (MySQL)');
+    
+    const portasConhecidas = {
+      20: 'FTP (dados)', 21: 'FTP (controle)', 22: 'SSH', 23: 'Telnet',
+      25: 'SMTP (email)', 53: 'DNS', 80: 'HTTP', 110: 'POP3',
+      143: 'IMAP', 443: 'HTTPS', 993: 'IMAPS', 995: 'POP3S',
+      3306: 'MySQL', 5432: 'PostgreSQL', 27017: 'MongoDB',
+      3389: 'Remote Desktop', 8080: 'HTTP Alternativo', 8443: 'HTTPS Alternativo'
+    };
+
+    return reply(`
+╔══════════════════╗
+     🔌 INFO DA PORTA ${porta} 🔌
+╚══════════════════╝
+
+🔢 *Porta:* ${porta}
+📋 *Serviço:* ${portasConhecidas[porta] || 'Desconhecido/Personalizado'}
+📊 *Tipo:* ${porta <= 1023 ? 'Bem conhecida (0-1023)' : porta <= 49151 ? 'Registrada (1024-49151)' : 'Dinâmica (49152-65535)'}
+
+🔍 *Verificar se está aberta:*
+➤ Use: https://www.yougetsignal.com/tools/open-ports/
+➤ Ou: https://canyouseeme.org
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  // ===========================================================
+  // COMANDOS PERSONALIZADOS — CRIAR / USAR / LISTAR / DELETAR
+  // ===========================================================
+
+  // !comando [nome] [texto] (pode incluir imagem na mensagem)
+  if (command === '#comando') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Apenas admins e mods podem criar comandos.');
+    
+    if (!args.length) return reply('❌ Use: !comando [nome] [texto]\nEnvie com uma imagem para associar ao comando!\n\nExemplo:\n!comando saudacao Olá pessoal, bem-vindos!');
+    
+    const cmdName = args[0].toLowerCase();
+    const cmdText = args.slice(1).join(' ');
+    
+    if (!cmdText && !message.message?.imageMessage) {
+      return reply('❌ Você precisa fornecer um texto e/ou imagem!\n\nUso: !comando [nome] [texto]\nOu envie uma imagem com a legenda: !comando [nome] [texto]');
+    }
+    
+    // Verificar se há imagem na mensagem
+    const imageMsg = message.message?.imageMessage;
+    let imageBuffer = null;
+    let imagePath = null;
+    
+    if (imageMsg) {
+      try {
+        imageBuffer = await downloadMedia(imageMsg, 'image');
+        if (imageBuffer) {
+          // Salvar a imagem no diretório de dados
+          const imgDir = path.join(DATA_DIR, 'cmd_images');
+          if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+          imagePath = path.join(imgDir, `${groupId.replace('@g.us', '')}_${cmdName}_${Date.now()}.jpg`);
+          fs.writeFileSync(imagePath, imageBuffer);
+        }
+      } catch (err) {
+        console.log('[COMANDO] Erro ao salvar imagem:', err.message);
+      }
+    }
+    
+    // Salvar o comando
+    if (!customCmds[groupId]) customCmds[groupId] = {};
+    
+    // Se já existia um comando com esse nome e tinha imagem, deletar a imagem antiga
+    if (customCmds[groupId][cmdName] && customCmds[groupId][cmdName].imagePath) {
+      try { fs.unlinkSync(customCmds[groupId][cmdName].imagePath); } catch {}
+    }
+    
+    customCmds[groupId][cmdName] = {
+      text: cmdText || '',
+      imagePath: imagePath,
+      creator: sender,
+      createdAt: Date.now()
+    };
+    saveDB('customCmds', customCmds);
+    
+    let confirmMsg = `✅ Comando *!${cmdName}* criado com sucesso!\n\n`;
+    if (cmdText) confirmMsg += `📝 Texto: ${cmdText}\n`;
+    if (imagePath) confirmMsg += `🖼️ Imagem: Anexada\n`;
+    confirmMsg += `\n💡 Para usar: !${cmdName}`;
+    
+    return reply(confirmMsg);
+  }
+
+  // #vercomandos — Listar todos os comandos personalizados do grupo
+  if (command === '#vercomandos' || command === '#listacmd') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    
+    const cmds = customCmds[groupId];
+    if (!cmds || !Object.keys(cmds).length) {
+      return reply('📋 Nenhum comando personalizado criado neste grupo.\n\nUse !comando [nome] [texto] para criar!');
+    }
+    
+    let text = `
+╔══════════════════╗
+     📋 COMANDOS DO GRUPO 📋
+╚══════════════════╝
+
+`;
+    Object.entries(cmds).forEach(([name, cmd], i) => {
+      const hasImg = cmd.imagePath ? '🖼️' : '📝';
+      const preview = cmd.text ? (cmd.text.length > 40 ? cmd.text.substring(0, 40) + '...' : cmd.text) : '(somente imagem)';
+      text += `${i + 1}. ${hasImg} *!${name}*\n   ➤ ${preview}\n\n`;
+    });
+    
+    text += `╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`;
+    
+    return reply(text);
+  }
+
+  // #delcomando — Deletar um comando personalizado
+  if (command === '#delcomando' || command === '#rmcmd') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Apenas admins e mods podem deletar comandos.');
+    if (!args.length) return reply('❌ Use: #delcomando [nome]\nEx: #delcomando saudacao');
+    
+    const cmdName = args[0].toLowerCase();
+    
+    if (!customCmds[groupId] || !customCmds[groupId][cmdName]) {
+      return reply(`❌ Comando *!${cmdName}* não encontrado.\nUse #vercomandos para ver a lista.`);
+    }
+    
+    // Deletar imagem se existir
+    if (customCmds[groupId][cmdName].imagePath) {
+      try { fs.unlinkSync(customCmds[groupId][cmdName].imagePath); } catch {}
+    }
+    
+    delete customCmds[groupId][cmdName];
+    saveDB('customCmds', customCmds);
+    
+    return reply(`✅ Comando *!${cmdName}* deletado com sucesso!`);
+  }
+
+  // ===========================================================
+  // EXECUTAR COMANDOS PERSONALIZADOS (verifica se existe)
+  // ===========================================================
+  
+  if (isGroup && customCmds[groupId]) {
+    const cmdName = command.substring(1); // Remove o # do início
+    const cmd = customCmds[groupId][cmdName];
+    
+    if (cmd) {
+      try {
+        // Se tem imagem e texto
+        if (cmd.imagePath && fs.existsSync(cmd.imagePath)) {
+          const imgBuffer = fs.readFileSync(cmd.imagePath);
+          await sock.sendMessage(groupId, {
+            image: imgBuffer,
+            caption: cmd.text || ''
+          }, { quoted: message });
+        } else if (cmd.text) {
+          // Só texto
+          await reply(cmd.text);
+        }
+        return;
+      } catch (err) {
+        console.log('[CMD PERSONALIZADO] Erro:', err.message);
+        return reply('❌ Erro ao executar o comando personalizado.');
+      }
+    }
+  }
+
+  // ===========================================================
   // COMANDO NAO ENCONTRADO (apenas se comecar com # ou /)
   // ===========================================================
 
@@ -2855,6 +3844,303 @@ const connectBot = async () => {
               text: `@${sender.split('@')[0]} voltou da ausencia! (ficou ausente por ${formatTime(Date.now() - afk.time)})`,
               mentions: [sender],
             });
+          }
+        }
+
+        // ===========================================================
+        // MENSAGEM PRIVADA — DETECTAR ADMIN E CONFIGURAR GRUPOS
+        // ===========================================================
+        if (!isGroup) {
+          const privateSender = sender;
+          const privateReply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
+          
+          // Verificar se o usuário está em um fluxo de configuração
+          if (!privateConfig[privateSender]) {
+            privateConfig[privateSender] = { step: 'idle', selectedGroup: null };
+          }
+          
+          const pConfig = privateConfig[privateSender];
+          
+          // Se o usuário está respondendo com número de opção durante configuração
+          if (pConfig.step === 'awaiting_group_selection' && /^\d+$/.test(body.trim())) {
+            const idx = parseInt(body.trim()) - 1;
+            const groups = pConfig.adminGroups || [];
+            
+            if (idx >= 0 && idx < groups.length) {
+              const selectedGroup = groups[idx];
+              pConfig.step = 'configuring';
+              pConfig.selectedGroup = selectedGroup.id;
+              pConfig.selectedGroupName = selectedGroup.name;
+              saveDB('privateConfig', privateConfig);
+              
+              const settings = getGroupSettings(selectedGroup.id);
+              
+              const configMenu = `
+╔══════════════════════╗
+  ⚙️ CONFIGURANDO: ${selectedGroup.name}
+╚══════════════════════╝
+
+📊 *Status atual das funções:*
+
+1️⃣ Antilink: ${settings.antilink ? '✅ ON' : '❌ OFF'}
+2️⃣ Bem-vindo: ${settings.welcome ? '✅ ON' : '❌ OFF'}
+3️⃣ Anti Palavrão: ${settings.antiPalavra ? '✅ ON' : '❌ OFF'}
+4️⃣ Anti Vendas: ${settings.antiVendas ? '✅ ON' : '❌ OFF'}
+5️⃣ Anti Call: ${settings.anticall ? '✅ ON' : '❌ OFF'}
+6️⃣ Só Admin: ${settings.soAdm ? '✅ ON' : '❌ OFF'}
+7️⃣ Anti View Once: ${settings.antiViewOnce ? '✅ ON' : '❌ OFF'}
+8️⃣ Auto Baixar: ${settings.autoBaixar ? '✅ ON' : '❌ OFF'}
+
+📝 *Como configurar:*
+➤ Envie o número para ativar/desativar
+   Ex: *1* (liga/desliga antilink)
+
+⏰ *Horários automáticos:*
+➤ Abrir grupo: ${settings.openAt || 'Não definido'}
+➤ Fechar grupo: ${settings.closeAt || 'Não definido'}
+➤ Envie: *abrir HH:MM* ou *fechar HH:MM*
+
+🔄 Envie *trocar* para mudar de grupo
+🔙 Envie *sair* para encerrar
+
+╔══════════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════════╝`;
+              
+              await privateReply(configMenu);
+              continue;
+            } else {
+              await privateReply('❌ Opção inválida. Envie o número correspondente ao grupo.');
+              continue;
+            }
+          }
+          
+          // Se está no modo de configuração
+          if (pConfig.step === 'configuring' && pConfig.selectedGroup) {
+            const input = body.trim().toLowerCase();
+            const selectedGroupId = pConfig.selectedGroup;
+            const settings = getGroupSettings(selectedGroupId);
+            
+            // Sair da configuração
+            if (input === 'sair' || input === 'exit') {
+              pConfig.step = 'idle';
+              pConfig.selectedGroup = null;
+              saveDB('privateConfig', privateConfig);
+              await privateReply('✅ Configuração encerrada! Envie qualquer mensagem para iniciar novamente.');
+              continue;
+            }
+            
+            // Trocar de grupo
+            if (input === 'trocar' || input === 'mudar') {
+              pConfig.step = 'idle';
+              pConfig.selectedGroup = null;
+              saveDB('privateConfig', privateConfig);
+              // Vai cair no fluxo de detecção de admin abaixo
+            } else {
+              // Configurar opções por número
+              const toggleMap = {
+                '1': { key: 'antilink', name: 'Antilink' },
+                '2': { key: 'welcome', name: 'Bem-vindo' },
+                '3': { key: 'antiPalavra', name: 'Anti Palavrão' },
+                '4': { key: 'antiVendas', name: 'Anti Vendas' },
+                '5': { key: 'anticall', name: 'Anti Call' },
+                '6': { key: 'soAdm', name: 'Só Admin' },
+                '7': { key: 'antiViewOnce', name: 'Anti View Once' },
+                '8': { key: 'autoBaixar', name: 'Auto Baixar' },
+              };
+              
+              if (toggleMap[input]) {
+                const opt = toggleMap[input];
+                settings[opt.key] = !settings[opt.key];
+                saveSettings();
+                
+                const status = settings[opt.key] ? '✅ ATIVADO' : '❌ DESATIVADO';
+                await privateReply(`${opt.name}: ${status}\n\nEnvie outro número para configurar ou *sair* para encerrar.`);
+                continue;
+              }
+              
+              // Configurar horário de abertura
+              if (input.startsWith('abrir ')) {
+                const time = input.replace('abrir ', '').trim();
+                if (/^\d{2}:\d{2}$/.test(time)) {
+                  settings.openAt = time;
+                  saveSettings();
+                  await privateReply(`✅ Grupo vai abrir automaticamente às ${time}`);
+                  continue;
+                }
+                await privateReply('❌ Formato inválido. Use: abrir HH:MM (ex: abrir 08:00)');
+                continue;
+              }
+              
+              // Configurar horário de fechamento
+              if (input.startsWith('fechar ')) {
+                const time = input.replace('fechar ', '').trim();
+                if (/^\d{2}:\d{2}$/.test(time)) {
+                  settings.closeAt = time;
+                  saveSettings();
+                  await privateReply(`✅ Grupo vai fechar automaticamente às ${time}`);
+                  continue;
+                }
+                await privateReply('❌ Formato inválido. Use: fechar HH:MM (ex: fechar 22:00)');
+                continue;
+              }
+              
+              // Definir mensagem de boas-vindas
+              if (input.startsWith('bemvindo ')) {
+                const msg = body.trim().substring(9); // Preservar formatação original
+                settings.welcomeMsg = msg;
+                saveSettings();
+                await privateReply(`✅ Mensagem de boas-vindas definida:\n\n${msg}`);
+                continue;
+              }
+              
+              // Definir mensagem de saída
+              if (input.startsWith('saida ')) {
+                const msg = body.trim().substring(6);
+                settings.leaveMsg = msg;
+                saveSettings();
+                await privateReply(`✅ Mensagem de saída definida:\n\n${msg}`);
+                continue;
+              }
+              
+              // Se digitou algo que não é opção
+              if (!toggleMap[input] && !['trocar', 'mudar', 'sair', 'exit'].includes(input) && !input.startsWith('abrir ') && !input.startsWith('fechar ') && !input.startsWith('bemvindo ') && !input.startsWith('saida ')) {
+                await privateReply('❌ Opção não reconhecida.\n\nEnvie um número (1-8) para ativar/desativar funções.\nOu: *abrir HH:MM*, *fechar HH:MM*, *trocar*, *sair*');
+                continue;
+              }
+            }
+          }
+          
+          // Se chegou aqui e não está em nenhum fluxo ativo, iniciar detecção de admin
+          if (pConfig.step === 'idle' || !pConfig.step) {
+            try {
+              // Buscar todos os grupos do bot
+              const allGroups = await sock.groupFetchAllParticipating();
+              const adminGroups = [];
+              
+              for (const [gId, group] of Object.entries(allGroups)) {
+                const participant = group.participants.find(p => p.id === privateSender);
+                if (participant && (participant.admin === 'admin' || participant.admin === 'superadmin')) {
+                  adminGroups.push({
+                    id: gId,
+                    name: group.subject,
+                    role: participant.admin === 'superadmin' ? 'Criador' : 'Admin'
+                  });
+                }
+              }
+              
+              // Também verificar cargos do bot
+              for (const [gId, group] of Object.entries(allGroups)) {
+                if (adminGroups.find(g => g.id === gId)) continue; // Já está na lista
+                if (cargos[gId] && cargos[gId][privateSender]) {
+                  const cargo = cargos[gId][privateSender];
+                  if (['admin', 'mod'].includes(cargo)) {
+                    adminGroups.push({
+                      id: gId,
+                      name: group.subject,
+                      role: `Cargo: ${cargo}`
+                    });
+                  }
+                }
+              }
+              
+              // Se é dono do bot, mostrar todos os grupos
+              if (isOwner(privateSender)) {
+                const allGroupsList = Object.entries(allGroups).map(([gId, g]) => ({
+                  id: gId,
+                  name: g.subject,
+                  role: '👑 Dono do Bot'
+                }));
+                
+                if (allGroupsList.length) {
+                  pConfig.step = 'awaiting_group_selection';
+                  pConfig.adminGroups = allGroupsList;
+                  saveDB('privateConfig', privateConfig);
+                  
+                  let text = `
+╔══════════════════════╗
+  👑 PAINEL DO DONO — SignaBOT
+╚══════════════════════╝
+
+Olá, *${message.pushName || 'Dono'}*!
+Você tem acesso a *${allGroupsList.length} grupo(s)*:
+
+`;
+                  allGroupsList.forEach((g, i) => {
+                    const sub = checkSubscription(g.id);
+                    const subStatus = sub.active ? '✅' : '❌';
+                    text += `*${i + 1}.* ${g.name}\n   📊 Assinatura: ${subStatus}\n\n`;
+                  });
+                  
+                  text += `➤ Envie o *número* do grupo para configurar.\n\n╔══════════════════════╗\n      ⚡ SignaBOT ⚡\n╚══════════════════════╝`;
+                  
+                  await privateReply(text);
+                  continue;
+                }
+              }
+              
+              // Se é admin de algum grupo
+              if (adminGroups.length > 0) {
+                pConfig.step = 'awaiting_group_selection';
+                pConfig.adminGroups = adminGroups;
+                saveDB('privateConfig', privateConfig);
+                
+                let text = `
+╔══════════════════════╗
+  ⚙️ PAINEL DE ADMIN — SignaBOT
+╚══════════════════════╝
+
+Olá, *${message.pushName || 'Admin'}*!
+Você é admin em *${adminGroups.length} grupo(s)*:
+
+`;
+                adminGroups.forEach((g, i) => {
+                  const sub = checkSubscription(g.id);
+                  const subStatus = sub.active ? '✅ Ativa' : '❌ Inativa';
+                  text += `*${i + 1}.* ${g.name}\n   👤 ${g.role} | 📊 ${subStatus}\n\n`;
+                });
+                
+                text += `➤ Envie o *número* do grupo que deseja configurar.\n\n╔══════════════════════╗\n      ⚡ SignaBOT ⚡\n╚══════════════════════╝`;
+                
+                await privateReply(text);
+                continue;
+              } else {
+                // Não é admin de nenhum grupo
+                await privateReply(`
+╔══════════════════════╗
+  ⚠️ ACESSO RESTRITO ⚠️
+╚══════════════════════╝
+
+Olá, *${message.pushName || 'Usuário'}*!
+
+Você *não é administrador* de nenhum
+grupo onde o SignaBOT está presente.
+
+📌 *Para usar o SignaBOT:*
+➤ Assine o plano em: wa.me/${OWNER_NUMBER}
+➤ Adicione o bot ao seu grupo
+➤ Torne-se admin do grupo
+
+💰 *Planos SignaBOT:*
+➤ 7 dias — R$ XX,XX
+➤ 15 dias — R$ XX,XX
+➤ 30 dias — R$ XX,XX
+➤ 60 dias — R$ XX,XX
+➤ 90 dias — R$ XX,XX
+
+📞 *Contato para assinar:*
+➤ wa.me/${OWNER_NUMBER}
+
+╔══════════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════════╝`);
+                continue;
+              }
+            } catch (err) {
+              console.log('[PRIVADO] Erro ao buscar grupos:', err.message);
+              await privateReply('❌ Erro ao processar. Tente novamente em alguns segundos.');
+              continue;
+            }
           }
         }
 
