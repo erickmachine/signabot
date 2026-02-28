@@ -4775,9 +4775,6 @@ Voce e admin em *${adminGroups.length} grupo(s)*:
               } else {
                 // ── NÃO É ADMIN: Redirecionar para compra ──
                 await privateReply(`
-╔══════════════════════════╗
-     *ACESSO NEGADO*
-╚══════════════════════════╝
 
 Olá, *${message.pushName || 'Usuario'}*!
 
