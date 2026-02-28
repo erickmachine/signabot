@@ -101,6 +101,7 @@ let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
 let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, image, creator } } }
 let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
 let botLogs       = loadDB('botLogs');       // { errors: [], actions: [] }
+let groupHistory  = loadDB('groupHistory');  // { groupId: { hadTrial, hadPaid, ownerNumbers: [] } }
 
 // Inicializar logs se necessário
 if (!botLogs.errors) botLogs.errors = [];
@@ -129,6 +130,36 @@ const logBotAction = (action, details) => {
   // Manter apenas as últimas 200 ações
   if (botLogs.actions.length > 200) botLogs.actions = botLogs.actions.slice(-200);
   saveDB('botLogs', botLogs);
+};
+
+// ============================================================
+// HISTÓRICO DE GRUPOS (anti-burla de trial)
+// ============================================================
+
+// Registra que um grupo teve trial ou assinatura paga, e qual número era do criador/participante
+const markGroupHistory = (groupId, type, senderNumber) => {
+  if (!groupHistory[groupId]) {
+    groupHistory[groupId] = { hadTrial: false, hadPaid: false, ownerNumbers: [] };
+  }
+  if (type === 'trial') groupHistory[groupId].hadTrial = true;
+  if (type === 'paid' || type === 'premium') groupHistory[groupId].hadPaid = true;
+  if (senderNumber && !groupHistory[groupId].ownerNumbers.includes(senderNumber)) {
+    groupHistory[groupId].ownerNumbers.push(senderNumber);
+  }
+  saveDB('groupHistory', groupHistory);
+};
+
+// Verifica se um grupo ou número já usou trial/assinatura antes
+const groupOrNumberHasHistory = (groupId, senderNumber) => {
+  const hist = groupHistory[groupId];
+  if (hist && (hist.hadTrial || hist.hadPaid)) return true;
+  // Verificar se o número já apareceu em outro grupo com histórico
+  if (senderNumber) {
+    for (const [, h] of Object.entries(groupHistory)) {
+      if (h.ownerNumbers && h.ownerNumbers.includes(senderNumber)) return true;
+    }
+  }
+  return false;
 };
 
 // ============================================================
@@ -284,6 +315,7 @@ if (command === '#ativar') {
   const expiresAt = Date.now() + days * 86400000;
   subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
   saveDB('subscriptions', subscriptions);
+  markGroupHistory(groupId, 'paid', sender.split('@')[0]);
   
   console.log(`[ATIVAR] Assinatura ativada para ${groupId} até ${new Date(expiresAt).toLocaleString('pt-BR')}`);
   
@@ -296,13 +328,17 @@ if (command === '#trial') {
   const mins = parseInt(args[0]) || 10;
   subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
   saveDB('subscriptions', subscriptions);
+  markGroupHistory(groupId, 'trial', sender.split('@')[0]);
   return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
 }
 
 if (command === '#cancelar') {
   if (!ownerCheck) return reply('❌ Sem permissao.');
-  delete subscriptions[groupId];
-  saveDB('subscriptions', subscriptions);
+  if (subscriptions[groupId]) {
+    markGroupHistory(groupId, subscriptions[groupId].type || 'paid', sender.split('@')[0]);
+    delete subscriptions[groupId];
+    saveDB('subscriptions', subscriptions);
+  }
   return reply('✅ Assinatura cancelada.');
 }
 
@@ -1129,12 +1165,29 @@ os menus disponíveis:
 
       await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
 
-      // Usar API externa pois ytdl-core pode falhar em VPS
-      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`;
-      const { data } = await axios.get(apiUrl, { timeout: 30000 });
-      if (!data?.url) return reply('Erro ao obter link de audio.');
+      // APIs de fallback para áudio
+      const ytAudioApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
 
-      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+      let audioUrl = null;
+      for (const apiFn of ytAudioApis) {
+        try { audioUrl = await apiFn(); if (audioUrl) break; } catch {}
+      }
+      if (!audioUrl) return reply('Nao foi possivel obter o audio. Tente novamente mais tarde.');
+
+      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
       const buffer = Buffer.from(audioResp.data);
 
       await sock.sendMessage(groupId, {
@@ -1164,11 +1217,29 @@ os menus disponíveis:
 
       await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
 
-      const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`;
-      const { data } = await axios.get(apiUrl, { timeout: 30000 });
-      if (!data?.url) return reply('Erro ao obter link de video.');
+      // APIs de fallback para vídeo
+      const ytVideoApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
 
-      const videoResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 120000 });
+      let videoUrl = null;
+      for (const apiFn of ytVideoApis) {
+        try { videoUrl = await apiFn(); if (videoUrl) break; } catch {}
+      }
+      if (!videoUrl) return reply('Nao foi possivel obter o video. Tente novamente mais tarde.');
+
+      const videoResp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120000 });
       const buffer = Buffer.from(videoResp.data);
 
       await sock.sendMessage(groupId, {
@@ -1330,23 +1401,75 @@ if (command === '#tiktok' || command === '#tt') {
   if (command === '#instagram' || command === '#insta') {
     if (args.length === 0) return reply('Use: #instagram [URL]');
     const url = args[0];
-    await reply('Baixando Instagram...');
-    try {
-      const { data } = await axios.get(
-        `https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`,
-        { timeout: 20000 }
-      );
-      if (!data?.url) return reply('Erro ao baixar. Verifique se o link e valido e o perfil e publico.');
-      const mediaResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
-      const buffer = Buffer.from(mediaResp.data);
-      const isVideo = data.type === 'video';
-      if (isVideo) {
-        await sock.sendMessage(groupId, { video: buffer, caption: 'Instagram' }, { quoted: message });
-      } else {
-        await sock.sendMessage(groupId, { image: buffer, caption: 'Instagram' }, { quoted: message });
+    if (!url.includes('instagram.com')) return reply('❌ URL invalida. Envie um link do Instagram.');
+    await reply('⏳ Baixando do Instagram...');
+
+    // Lista de APIs para tentar
+    const instaApis = [
+      {
+        name: 'xteam',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          if (!data?.url) return null;
+          return { mediaUrl: data.url, isVideo: data.type === 'video' };
+        }
+      },
+      {
+        name: 'siputzx',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          const isVideo = link.includes('.mp4') || data?.data?.[0]?.type === 'video';
+          return { mediaUrl: link, isVideo };
+        }
+      },
+      {
+        name: 'ryzendesu',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: link.includes('.mp4') };
+        }
+      },
+      {
+        name: 'tikwm-ig',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.play || data?.data?.wmplay;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: true };
+        }
+      },
+    ];
+
+    for (const api of instaApis) {
+      try {
+        console.log(`[INSTAGRAM] Tentando API: ${api.name}`);
+        const result = await api.fetch();
+        if (!result?.mediaUrl) continue;
+
+        const mediaResp = await axios.get(result.mediaUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        const buffer = Buffer.from(mediaResp.data);
+
+        if (result.isVideo) {
+          await sock.sendMessage(groupId, { video: buffer, caption: '📸 Instagram' }, { quoted: message });
+        } else {
+          await sock.sendMessage(groupId, { image: buffer, caption: '📸 Instagram' }, { quoted: message });
+        }
+        console.log(`[INSTAGRAM] ✅ API ${api.name} funcionou!`);
+        return;
+      } catch (err) {
+        console.log(`[INSTAGRAM] ❌ API ${api.name} falhou:`, err.message);
       }
-    } catch (err) { return reply('Erro ao baixar Instagram: ' + err.message); }
-    return;
+    }
+
+    return reply('❌ Nao foi possivel baixar o conteudo do Instagram.\n\nVerifique se:\n• O link e valido\n• O perfil e publico\n• Tente novamente mais tarde');
   }
 
   if (command === '#pinterest') {
@@ -3678,18 +3801,24 @@ const connectBot = async () => {
         const settings = isGroup ? getGroupSettings(groupId) : {};
 
         // ========== INICIAR TESTE GRÁTIS AUTOMATICAMENTE ==========
+        // Só ativa se o grupo E o número do remetente nunca tiveram trial ou assinatura antes
         if (isGroup && !subscriptions[groupId] && !blacklist[sender]) {
-          subscriptions[groupId] = {
-            type: 'trial',
-            activatedAt: Date.now(),
-            expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
-            notified: false
-          };
-          saveDB('subscriptions', subscriptions);
-          
-          await sock.sendMessage(groupId, {
-            text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, o bot será bloqueado até que o dono ative a assinatura com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
-          });
+          const senderNum = sender.split('@')[0];
+          if (!groupOrNumberHasHistory(groupId, senderNum)) {
+            subscriptions[groupId] = {
+              type: 'trial',
+              activatedAt: Date.now(),
+              expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
+              notified: false
+            };
+            saveDB('subscriptions', subscriptions);
+            // Registrar no histórico para impedir nova ativação
+            markGroupHistory(groupId, 'trial', senderNum);
+            
+            await sock.sendMessage(groupId, {
+              text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, o bot será bloqueado até que o dono ative a assinatura com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
+            });
+          }
         }
 
         // Obter texto da mensagem
@@ -3750,20 +3879,46 @@ const connectBot = async () => {
               for (const url of urls) {
                 if (url.includes('youtu')) {
                   try {
-                    const apiUrl = `https://api.xteam.xyz/ytdl?url=${encodeURIComponent(url)}&type=audio`;
-                    const { data } = await axios.get(apiUrl, { timeout: 30000 });
-                    if (data?.url) {
-                      const audioResp = await axios.get(data.url, { responseType: 'arraybuffer', timeout: 60000 });
+                    let audioUrl = null;
+                    const ytApis = [
+                      async () => { const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(url)}&type=audio`, { timeout: 25000 }); return data?.url || null; },
+                      async () => { const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(url)}`, { timeout: 25000 }); return data?.data?.url || data?.url || null; },
+                    ];
+                    for (const fn of ytApis) { try { audioUrl = await fn(); if (audioUrl) break; } catch {} }
+                    if (audioUrl) {
+                      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
                       await sock.sendMessage(groupId, { audio: Buffer.from(audioResp.data), mimetype: 'audio/mpeg', ptt: false }, { quoted: message });
                     }
                   } catch {}
                 }
                 if (url.includes('tiktok')) {
                   try {
-                    const { data } = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, { timeout: 20000 });
-                    if (data?.video?.noWatermark) {
-                      const resp = await axios.get(data.video.noWatermark, { responseType: 'arraybuffer', timeout: 60000 });
+                    let videoUrl = null;
+                    const ttApis = [
+                      async () => { const { data } = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, { timeout: 15000 }); return data?.video?.noWatermark || data?.video?.no_wm || null; },
+                      async () => { const { data } = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 15000 }); return data?.data?.play || null; },
+                    ];
+                    for (const fn of ttApis) { try { videoUrl = await fn(); if (videoUrl) break; } catch {} }
+                    if (videoUrl) {
+                      const resp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000 });
                       await sock.sendMessage(groupId, { video: Buffer.from(resp.data) }, { quoted: message });
+                    }
+                  } catch {}
+                }
+                if (url.includes('instagram.com')) {
+                  try {
+                    let mediaUrl = null;
+                    let isVideo = false;
+                    const igApis = [
+                      async () => { const { data } = await axios.get(`https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 }); return data?.url ? { mediaUrl: data.url, isVideo: data.type === 'video' } : null; },
+                      async () => { const { data } = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 }); const link = data?.data?.[0]?.url || data?.url; return link ? { mediaUrl: link, isVideo: link.includes('.mp4') } : null; },
+                    ];
+                    for (const fn of igApis) { try { const r = await fn(); if (r?.mediaUrl) { mediaUrl = r.mediaUrl; isVideo = r.isVideo; break; } } catch {} }
+                    if (mediaUrl) {
+                      const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                      const buf = Buffer.from(resp.data);
+                      if (isVideo) await sock.sendMessage(groupId, { video: buf, caption: 'Instagram' }, { quoted: message });
+                      else await sock.sendMessage(groupId, { image: buf, caption: 'Instagram' }, { quoted: message });
                     }
                   } catch {}
                 }
@@ -4292,6 +4447,7 @@ const connectBot = async () => {
                     activatedAt: Date.now()
                   };
                   saveDB('subscriptions', subscriptions);
+                  markGroupHistory(selectedGroupId, 'trial', privateSender.split('@')[0]);
                   logBotAction('activate_trial', `Trial ativado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
                   await privateReply(`Trial de 3 dias ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
                   continue;
@@ -4310,6 +4466,7 @@ const connectBot = async () => {
                   activatedAt: Date.now()
                 };
                 saveDB('subscriptions', subscriptions);
+                markGroupHistory(selectedGroupId, 'paid', privateSender.split('@')[0]);
                 logBotAction('activate_plan', `${dias} dias em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
                 await privateReply(`Plano de *${dias} dias* ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
                 continue;
@@ -4321,6 +4478,7 @@ const connectBot = async () => {
                   await privateReply('Este grupo nao possui assinatura ativa.');
                   continue;
                 }
+                markGroupHistory(selectedGroupId, subscriptions[selectedGroupId].type || 'paid', privateSender.split('@')[0]);
                 delete subscriptions[selectedGroupId];
                 saveDB('subscriptions', subscriptions);
                 logBotAction('cancel_plan', `Cancelado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
@@ -4683,6 +4841,9 @@ wa.me/${OWNER_NUMBER}
     for (const [groupId, sub] of Object.entries(subscriptions)) {
       if (sub.expiresAt < now && !sub.notified) {
         try {
+          // Registrar no histórico antes de notificar
+          markGroupHistory(groupId, sub.type || 'paid', null);
+
           await sock.sendMessage(groupId, {
             text: `⚠️ *Assinatura Expirada*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nO bot está bloqueado até que o dono ative novamente com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
           });
