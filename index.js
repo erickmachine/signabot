@@ -22,8 +22,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // SIGNABOT - Bot WhatsApp Completo
 // ============================================================
 
-const PREFIX = '#';
-const PREFIX2 = '/';
+const PREFIXES = ['#', '/', '!'];
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961';
 
@@ -142,6 +141,7 @@ const getGroupSettings = (groupId) => {
       antiSticker: false,
       antiContato: false,
       antiLoc: false,
+      antiVendas: false,
       soAdm: false,
       mute: false,
       openAt: null,
@@ -218,10 +218,9 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 
   // Verificar assinatura (pular comandos de assinatura e info)
   const skipSubCheck = [
-    '!ativar', '!status', '!cancelar', '!trial',
+    '#ativar', '#status', '#cancelar', '#trial',
     '#ping', '#info', '#dono', '#menu', '#sender', '#horario', '#feedback'
-  ].includes(command)
-    || command.startsWith('!') || ownerCheck;
+  ].includes(command) || ownerCheck;
 
   if (isGroup && !skipSubCheck) {
     const sub = checkSubscription(groupId);
@@ -236,7 +235,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 // ASSINATURA (dono) - VERSÃO CORRIGIDA COM # E !
 // ===========================================================
 
-if (command === '!ativar' || command === '#ativar') {
+if (command === '#ativar') {
   console.log(`[ATIVAR] Executando comando de ativação`);
   
   if (!ownerCheck) {
@@ -258,7 +257,7 @@ if (command === '!ativar' || command === '#ativar') {
   return reply(`✅ Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
 }
 
-if (command === '!trial' || command === '#trial') {
+if (command === '#trial') {
   if (!ownerCheck) return reply('❌ Sem permissao.');
   if (!isGroup) return reply('❌ Use em um grupo.');
   const mins = parseInt(args[0]) || 10;
@@ -267,14 +266,14 @@ if (command === '!trial' || command === '#trial') {
   return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
 }
 
-if (command === '!cancelar' || command === '#cancelar') {
+if (command === '#cancelar') {
   if (!ownerCheck) return reply('❌ Sem permissao.');
   delete subscriptions[groupId];
   saveDB('subscriptions', subscriptions);
   return reply('✅ Assinatura cancelada.');
 }
 
-if (command === '!status' || command === '#status') {
+if (command === '#status') {
   if (!isGroup) return reply('❌ Use em um grupo.');
   const sub = checkSubscription(groupId);
   if (!sub.active) return reply(`📊 Status: ${sub.reason}`);
@@ -301,7 +300,7 @@ if (command === '!status' || command === '#status') {
 ➤ Nome: ${senderName}
 ➤ Data: ${dataAtual}
 ➤ Hora: ${horaAtual}
-➤ Prefixo: #
+➤ Prefixos: # / !
 
 📌 *MENUS DISPONÍVEIS*
 ➤ #menu figurinhas
@@ -434,6 +433,7 @@ if (command === '!status' || command === '#status') {
 ⚙️ *CONFIGURAÇÕES*
 ➤ #bemvindo [on/off]
 ➤ #antilink [on/off]
+➤ #antivendas [on/off]
 ➤ #so_adm [on/off]
 ➤ #anticall [on/off]
 ➤ #x9visuunica [on/off]
@@ -568,6 +568,7 @@ if (command === '!status' || command === '#status') {
 ➤ #dono
 
 📱 *USUÁRIO*
+➤ #perfil [@user]
 ➤ #sender
 
 📝 *UTILIDADES*
@@ -1288,12 +1289,37 @@ if (command === '#tiktok' || command === '#tt') {
 
   if (command === '#ban') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    
+    // Verificar se está respondendo (reply) a uma mensagem
+    const quotedParticipant = getQuotedSender(message);
     const mentioned = getMentioned(message);
-    if (!mentioned.length) return reply('Marque o usuario para banir!');
+    
+    // Prioridade: quem foi mencionado na mensagem respondida (reply)
+    let targetUser = null;
+    if (quotedParticipant) {
+      targetUser = quotedParticipant;
+    } else if (mentioned.length) {
+      targetUser = mentioned[0];
+    }
+    
+    if (!targetUser) return reply('❌ Mencione (reply) a mensagem do usuário que deseja banir!');
+    
     try {
-      await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'remove');
-      return reply(`Usuario banido com sucesso!`);
-    } catch (err) { return reply('Erro ao banir: ' + err.message); }
+      // Deletar a mensagem do usuário banido (a mensagem que foi respondida)
+      const quotedKey = message.message?.extendedTextMessage?.contextInfo;
+      if (quotedKey?.stanzaId) {
+        await sock.sendMessage(groupId, { delete: {
+          remoteJid: groupId,
+          fromMe: false,
+          id: quotedKey.stanzaId,
+          participant: quotedKey.participant,
+        }}).catch(() => {});
+      }
+      
+      // Remover o usuário do grupo
+      await sock.groupParticipantsUpdate(groupId, [targetUser], 'remove');
+      return reply(`✅ Usuário @${targetUser.split('@')[0]} banido com sucesso!`);
+    } catch (err) { return reply('❌ Erro ao banir: ' + err.message); }
   }
 
   if (command === '#add') {
@@ -1564,6 +1590,13 @@ if (command === '#tiktok' || command === '#tt') {
   if (command === '#listapalavrao') {
     if (!settings.palavroes || !settings.palavroes.length) return reply('Nenhum palavrao no filtro.');
     return reply(`Palavroes no filtro:\n\n${settings.palavroes.join(', ')}`);
+  }
+
+  if (command === '#antivendas') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiVendas = true; saveSettings(); return reply('🚫 Anti vendas ativado! Mensagens de venda serão deletadas e os admins serão notificados.'); }
+    if (args[0] === 'off') { settings.antiVendas = false; saveSettings(); return reply('✅ Anti vendas desativado.'); }
+    return reply(`🚫 Anti vendas: ${settings.antiVendas ? 'Ativado' : 'Desativado'}\nUse: #antivendas [on/off]`);
   }
 
   if (command === '#anticall') {
@@ -2061,6 +2094,154 @@ if (command === '#sorteio') {
   // INFO / PING / DONO / SENDER
   // ===========================================================
 
+  // ===========================================================
+  // PERFIL DO USUÁRIO
+  // ===========================================================
+
+  if (command === '#perfil') {
+    const mentioned = getMentioned(message);
+    const quotedParticipant = getQuotedSender(message);
+    const targetUser = quotedParticipant || (mentioned.length ? mentioned[0] : sender);
+    const targetName = targetUser === sender ? senderName : (targetUser.split('@')[0]);
+    
+    // Quantidade de mensagens
+    const activity = userActivity[groupId] || {};
+    const userAct = activity[targetUser] || { messageCount: 0, lastActive: 0 };
+    const msgCount = userAct.messageCount || 0;
+    
+    // XP (baseado em mensagens: 10xp por mensagem)
+    const xp = msgCount * 10;
+    const level = Math.floor(xp / 500) + 1;
+    const xpNextLevel = (level * 500) - xp;
+    
+    // Gold
+    const goldDB = loadDB('gold');
+    const userGold = goldDB[targetUser] || 0;
+    
+    // Região pelo DDD/DDI
+    const userNumber = targetUser.split('@')[0];
+    let regiao = 'Desconhecida';
+    
+    // Mapa de DDDs brasileiros
+    const dddMap = {
+      '11': 'São Paulo - SP', '12': 'São José dos Campos - SP', '13': 'Santos - SP',
+      '14': 'Bauru - SP', '15': 'Sorocaba - SP', '16': 'Ribeirão Preto - SP',
+      '17': 'São José do Rio Preto - SP', '18': 'Presidente Prudente - SP', '19': 'Campinas - SP',
+      '21': 'Rio de Janeiro - RJ', '22': 'Campos dos Goytacazes - RJ', '24': 'Volta Redonda - RJ',
+      '27': 'Vitória - ES', '28': 'Cachoeiro de Itapemirim - ES',
+      '31': 'Belo Horizonte - MG', '32': 'Juiz de Fora - MG', '33': 'Governador Valadares - MG',
+      '34': 'Uberlândia - MG', '35': 'Poços de Caldas - MG', '37': 'Divinópolis - MG', '38': 'Montes Claros - MG',
+      '41': 'Curitiba - PR', '42': 'Ponta Grossa - PR', '43': 'Londrina - PR',
+      '44': 'Maringá - PR', '45': 'Foz do Iguaçu - PR', '46': 'Francisco Beltrão - PR',
+      '47': 'Joinville - SC', '48': 'Florianópolis - SC', '49': 'Chapecó - SC',
+      '51': 'Porto Alegre - RS', '53': 'Pelotas - RS', '54': 'Caxias do Sul - RS', '55': 'Santa Maria - RS',
+      '61': 'Brasília - DF', '62': 'Goiânia - GO', '63': 'Palmas - TO', '64': 'Rio Verde - GO',
+      '65': 'Cuiabá - MT', '66': 'Rondonópolis - MT', '67': 'Campo Grande - MS', '68': 'Rio Branco - AC', '69': 'Porto Velho - RO',
+      '71': 'Salvador - BA', '73': 'Ilhéus - BA', '74': 'Juazeiro - BA', '75': 'Feira de Santana - BA', '77': 'Vitória da Conquista - BA',
+      '79': 'Aracaju - SE',
+      '81': 'Recife - PE', '82': 'Maceió - AL', '83': 'João Pessoa - PB',
+      '84': 'Natal - RN', '85': 'Fortaleza - CE', '86': 'Teresina - PI',
+      '87': 'Petrolina - PE', '88': 'Juazeiro do Norte - CE', '89': 'Picos - PI',
+      '91': 'Belém - PA', '92': 'Manaus - AM', '93': 'Santarém - PA', '94': 'Marabá - PA',
+      '95': 'Boa Vista - RR', '96': 'Macapá - AP', '97': 'Coari - AM', '98': 'São Luís - MA', '99': 'Imperatriz - MA',
+    };
+    
+    // DDI internacionais
+    const ddiMap = {
+      '1': 'Estados Unidos / Canadá', '44': 'Reino Unido', '351': 'Portugal',
+      '34': 'Espanha', '33': 'França', '49': 'Alemanha', '39': 'Itália',
+      '81': 'Japão', '82': 'Coreia do Sul', '86': 'China',
+      '91': 'Índia', '7': 'Rússia', '52': 'México', '54': 'Argentina',
+      '56': 'Chile', '57': 'Colômbia', '58': 'Venezuela', '591': 'Bolívia',
+      '595': 'Paraguai', '598': 'Uruguai', '51': 'Peru',
+    };
+    
+    if (userNumber.startsWith('55') && userNumber.length >= 12) {
+      // Número brasileiro: 55 + DDD(2) + número(8-9)
+      const ddd = userNumber.substring(2, 4);
+      regiao = dddMap[ddd] || `Brasil (DDD ${ddd})`;
+    } else {
+      // Número internacional - tentar detectar DDI
+      let found = false;
+      for (const [ddi, pais] of Object.entries(ddiMap).sort((a, b) => b[0].length - a[0].length)) {
+        if (userNumber.startsWith(ddi)) {
+          regiao = pais;
+          found = true;
+          break;
+        }
+      }
+      if (!found && userNumber.startsWith('55')) {
+        regiao = 'Brasil';
+      }
+    }
+    
+    // Verificar se é admin
+    let isAdminUser = false;
+    let cargoUser = 'Membro';
+    if (isGroup) {
+      isAdminUser = await isAdmin(sock, groupId, targetUser);
+      const cargoVal = getCargo(groupId, targetUser);
+      if (isOwner(targetUser)) cargoUser = '👑 Dono do Bot';
+      else if (isAdminUser) cargoUser = '⭐ Admin';
+      else if (cargoVal) cargoUser = `🏷️ ${cargoVal.charAt(0).toUpperCase() + cargoVal.slice(1)}`;
+      else cargoUser = '👤 Membro';
+    }
+    
+    // Advertências
+    const userWarns = warnings[groupId]?.[targetUser] || [];
+    const warnLimit = settings.warningLimit || 3;
+    
+    // Barra de XP visual
+    const xpProgress = Math.min(Math.floor(((xp % 500) / 500) * 10), 10);
+    const xpBar = '█'.repeat(xpProgress) + '░'.repeat(10 - xpProgress);
+    
+    const perfilText = `
+╔══════════════════╗
+     👤 PERFIL DO USUÁRIO 👤
+╚══════════════════╝
+
+📛 *Nick:* ${targetName}
+📞 *Número:* +${userNumber}
+
+📊 *ESTATÍSTICAS*
+➤ Mensagens: ${msgCount}
+➤ XP: ${xp} (Nível ${level})
+➤ Próximo nível: ${xpNextLevel} XP
+➤ [${xpBar}] ${Math.floor((xp % 500) / 5)}%
+➤ Gold: ${userGold} 💰
+
+🌍 *REGIÃO*
+➤ ${regiao}
+
+🏅 *CARGO*
+➤ ${cargoUser}
+
+⚠️ *ADVERTÊNCIAS*
+➤ ${userWarns.length}/${warnLimit}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`;
+
+    // Tentar enviar com foto de perfil
+    try {
+      const ppUrl = await sock.profilePictureUrl(targetUser, 'image').catch(() => null);
+      if (ppUrl) {
+        const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 10000 });
+        return await sock.sendMessage(groupId, {
+          image: Buffer.from(ppResp.data),
+          caption: perfilText,
+          mentions: [targetUser],
+        }, { quoted: message });
+      }
+    } catch {}
+    
+    return await sock.sendMessage(groupId, {
+      text: perfilText,
+      mentions: [targetUser],
+    }, { quoted: message });
+  }
+
   if (command === '#ping') {
     const start = Date.now();
     await reply('🏓 Pong!');
@@ -2074,7 +2255,7 @@ if (command === '#sorteio') {
 ╚══════════════════╝
 
 🤖 *Nome:* ${BOT_NAME}
-📱 *Prefixo:* # e /
+📱 *Prefixos:* # / !
 ⚙️ *Versão:* 2.0
 🌐 *Plataforma:* WhatsApp
 
@@ -2267,7 +2448,7 @@ ${isGroup ? `👥 *Grupo:* ${groupId}` : '💬 *Chat privado*'}
   // COMANDO NAO ENCONTRADO (apenas se comecar com # ou /)
   // ===========================================================
 
-  if (command.startsWith('#') || command.startsWith('/')) {
+  if (command.startsWith('#')) {
     return reply('Comando nao encontrado. Use #menu para ver os comandos disponiveis.');
   }
 };
@@ -2587,6 +2768,63 @@ const connectBot = async () => {
           }
         }
 
+        // ANTI VENDAS - Detecta mensagens de venda e deleta
+        if (isGroup && settings.antiVendas && body) {
+          // Padrões de detecção de vendas
+          const vendasPatterns = [
+            /R\$\s*\d+/i,                          // R$ seguido de número (R$10, R$ 50, etc.)
+            /\d+[.,]\d{2}\s*(reais|real)/i,         // 10,00 reais / 50.00 real
+            /\d+\s*(reais|real)/i,                   // 10 reais / 50 real
+            /vendo\b/i,                              // "vendo"
+            /vende-se/i,                             // "vende-se"
+            /à venda/i,                              // "à venda"
+            /a venda/i,                              // "a venda"
+            /compre\s+(já|agora|aqui)/i,             // "compre já/agora/aqui"
+            /promoção/i,                             // "promoção"
+            /promo[çc][aã]o/i,                       // "promoçao" (sem acento)
+            /oferta\s+(imperdível|especial|relâmpago)/i, // "oferta imperdível/especial"
+            /por\s+apenas\s+R?\$?\s*\d+/i,           // "por apenas R$10"
+            /pix\s+.*\d+/i,                          // "pix" seguido de valor
+            /entrega\s+(grátis|gratuita|gratis)/i,   // "entrega grátis"
+            /frete\s+(grátis|gratuita|gratis|free)/i,// "frete grátis"
+            /link\s+(na\s+)?bio/i,                   // "link na bio"
+            /chama\s+(no\s+)?(pv|privado|inbox|dm)/i,// "chama no pv/privado"
+            /interessados?\s+(chama|inbox|pv|dm|privado)/i, // "interessados chama"
+            /vendas?\s+(pelo|por|via|no)\s+(whatsapp|whats|zap|insta)/i, // "vendas pelo whatsapp"
+            /tabela\s+de\s+pre[çc]os?/i,             // "tabela de preços"
+            /valores?\s+(no|pelo|via)\s+(pv|privado|inbox|dm)/i, // "valores no pv"
+          ];
+          
+          const isVenda = vendasPatterns.some(pattern => pattern.test(body));
+          
+          if (isVenda) {
+            const isAdminSender = await isAdmin(sock, groupId, sender);
+            if (!isAdminSender && !isOwner(sender)) {
+              // Deletar a mensagem de venda
+              try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
+              
+              // Buscar os admins do grupo para mencionar
+              try {
+                const meta = await sock.groupMetadata(groupId);
+                const admins = meta.participants.filter(p => p.admin);
+                const adminMentions = admins.map(a => a.id);
+                const adminTags = admins.map(a => `@${a.id.split('@')[0]}`).join(' ');
+                
+                await sock.sendMessage(groupId, {
+                  text: `🚫 *ANTI VENDAS*\n\n⚠️ O usuário @${sender.split('@')[0]} enviou uma mensagem de venda e foi deletada!\n\n👮 Admins: ${adminTags}`,
+                  mentions: [sender, ...adminMentions],
+                });
+              } catch {
+                await sock.sendMessage(groupId, {
+                  text: `🚫 *ANTI VENDAS*\n\n⚠️ O usuário @${sender.split('@')[0]} enviou uma mensagem de venda e foi deletada!`,
+                  mentions: [sender],
+                });
+              }
+              continue;
+            }
+          }
+        }
+
         // SO-ADM
         if (isGroup && settings.soAdm && body) {
           const isAdminSender = await isAdmin(sock, groupId, sender);
@@ -2620,10 +2858,12 @@ const connectBot = async () => {
           }
         }
 
-        // PROCESSAR COMANDOS
-        if (body && (body.startsWith(PREFIX) || body.startsWith(PREFIX2))) {
+        // PROCESSAR COMANDOS (multi prefixos: #, /, !)
+        if (body && PREFIXES.some(p => body.startsWith(p))) {
           const parts = body.trim().split(/\s+/);
-          const command = parts[0].toLowerCase();
+          const rawCommand = parts[0].toLowerCase();
+          // Normalizar comando para sempre usar # como prefixo interno
+          const command = '#' + rawCommand.substring(1);
           const args = parts.slice(1);
           await handleCommand(sock, message, groupId, sender, command, args, isGroup);
         }
