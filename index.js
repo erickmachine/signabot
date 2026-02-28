@@ -100,6 +100,36 @@ let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
 let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
 let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, image, creator } } }
 let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
+let botLogs       = loadDB('botLogs');       // { errors: [], actions: [] }
+
+// Inicializar logs se necessário
+if (!botLogs.errors) botLogs.errors = [];
+if (!botLogs.actions) botLogs.actions = [];
+
+// Função para registrar erros do bot
+const logBotError = (context, error) => {
+  botLogs.errors.push({
+    time: Date.now(),
+    context,
+    error: error?.message || String(error),
+    stack: error?.stack?.split('\n').slice(0, 3).join(' | ') || ''
+  });
+  // Manter apenas os últimos 100 erros
+  if (botLogs.errors.length > 100) botLogs.errors = botLogs.errors.slice(-100);
+  saveDB('botLogs', botLogs);
+};
+
+// Função para registrar ações do bot
+const logBotAction = (action, details) => {
+  botLogs.actions.push({
+    time: Date.now(),
+    action,
+    details
+  });
+  // Manter apenas as últimas 200 ações
+  if (botLogs.actions.length > 200) botLogs.actions = botLogs.actions.slice(-200);
+  saveDB('botLogs', botLogs);
+};
 
 // ============================================================
 // HELPERS GERAIS
@@ -3184,7 +3214,7 @@ na internet. Cada conexão tem um.
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
-╚══════════════════╝`);
+��══════════════════╝`);
   }
 
   if (command === '#vpn') {
@@ -3326,6 +3356,7 @@ na internet. Cada conexão tem um.
         }
       } catch (err) {
         console.log('[COMANDO] Erro ao salvar imagem:', err.message);
+        logBotError('cmd_save_image', err);
       }
     }
     
@@ -3428,6 +3459,7 @@ na internet. Cada conexão tem um.
         return;
       } catch (err) {
         console.log('[CMD PERSONALIZADO] Erro:', err.message);
+        logBotError('custom_cmd_exec', err);
         return reply('❌ Erro ao executar o comando personalizado.');
       }
     }
@@ -3853,6 +3885,7 @@ const connectBot = async () => {
         if (!isGroup) {
           const privateSender = sender;
           const privateReply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
+          const ownerPrivate = isOwner(privateSender);
           
           // Verificar se o usuário está em um fluxo de configuração
           if (!privateConfig[privateSender]) {
@@ -3860,8 +3893,91 @@ const connectBot = async () => {
           }
           
           const pConfig = privateConfig[privateSender];
+
+          // ─────────────────────────────────────────────────────
+          // HELPER: Gera o menu principal de configuração do grupo
+          // ─────────────────────────────────────────────────────
+          const buildConfigMenu = (gId, gName) => {
+            const s = getGroupSettings(gId);
+            const sub = checkSubscription(gId);
+            const subInfo = sub.active
+              ? `✅ Ativa | Expira em: ${formatTime(sub.expiresAt - Date.now())}`
+              : '❌ Inativa';
+            
+            // Contar comandos personalizados
+            const cmdCount = customCmds[gId] ? Object.keys(customCmds[gId]).length : 0;
+            
+            // Contar mensagens agendadas
+            const schedCount = autoMessages[gId] ? Object.keys(autoMessages[gId]).length : 0;
+
+            let menu = `
+╔══════════════════════════╗
+  ⚙️ *${gName}*
+╚══════════════════════════╝
+
+📊 *Assinatura:* ${subInfo}
+
+━━━ *FUNÇÕES* ━━━━━━━━━━━━
+1️⃣ Antilink: ${s.antilink ? '✅' : '❌'}
+2️⃣ Bem-vindo: ${s.welcome ? '✅' : '❌'}
+3️⃣ Anti Palavrão: ${s.antiPalavra ? '✅' : '❌'}
+4️⃣ Anti Vendas: ${s.antiVendas ? '✅' : '❌'}
+5️⃣ Anti Call: ${s.anticall ? '✅' : '❌'}
+6️⃣ Só Admin: ${s.soAdm ? '✅' : '❌'}
+7️⃣ Anti View Once: ${s.antiViewOnce ? '✅' : '❌'}
+8️⃣ Auto Baixar: ${s.autoBaixar ? '✅' : '❌'}
+9️⃣ Anti Spam: ${s.antiSpam ? '✅' : '❌'}
+🔟 Anti Imagem: ${s.antiImg ? '✅' : '❌'}
+
+━━━ *TEXTOS* ━━━━━━━━━━━━━
+➤ *bemvindo* [msg] — Texto de boas-vindas
+   Atual: ${s.welcomeMsg ? s.welcomeMsg.substring(0, 50) + '...' : 'Padrão'}
+➤ *saida* [msg] — Texto de saída
+   Atual: ${s.leaveMsg ? s.leaveMsg.substring(0, 50) + '...' : 'Padrão'}
+➤ *regras* [texto] — Definir regras
+   Atual: ${rules[gId] ? 'Definido' : 'Não definido'}
+
+━━━ *HORÁRIOS* ━━━━━━━━━━━
+➤ *abrir* HH:MM — Abrir grupo
+   Atual: ${s.openAt || 'Não definido'}
+➤ *fechar* HH:MM — Fechar grupo
+   Atual: ${s.closeAt || 'Não definido'}
+
+━━━ *COMANDOS PERSONALIZADOS* ━━━
+📝 Total: ${cmdCount} comando(s)
+➤ *vercmd* — Ver comandos do grupo
+➤ *addcmd* [nome] [texto] — Criar comando
+➤ *delcmd* [nome] — Deletar comando
+
+━━━ *MENSAGENS AGENDADAS* ━━━━
+📅 Total: ${schedCount} agendamento(s)
+➤ *veragenda* — Ver agendamentos
+➤ *agenda* HH:MM [texto] — Agendar msg
+➤ *delagenda* [id] — Remover agendamento
+
+━━━ *NAVEGAÇÃO* ━━━━━━━━━━`;
+
+            if (ownerPrivate) {
+              menu += `
+➤ *plano* — Gerenciar assinatura
+➤ *logs* — Ver logs de erros do bot
+➤ *stats* — Estatísticas do grupo`;
+            }
+
+            menu += `
+➤ *trocar* — Mudar de grupo
+➤ *menu* — Exibir este menu novamente
+➤ *sair* — Encerrar configuração
+
+╔══════════════════════════╗
+        ⚡ *SignaBOT* ⚡
+╚══════════════════════════╝`;
+            return menu;
+          };
           
-          // Se o usuário está respondendo com número de opção durante configuração
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Seleção de grupo (resposta numérica)
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'awaiting_group_selection' && /^\d+$/.test(body.trim())) {
             const idx = parseInt(body.trim()) - 1;
             const groups = pConfig.adminGroups || [];
@@ -3873,145 +3989,517 @@ const connectBot = async () => {
               pConfig.selectedGroupName = selectedGroup.name;
               saveDB('privateConfig', privateConfig);
               
-              const settings = getGroupSettings(selectedGroup.id);
-              
-              const configMenu = `
-╔══════════════════════╗
-  ⚙️ CONFIGURANDO: ${selectedGroup.name}
-╚══════════════════════╝
-
-📊 *Status atual das funções:*
-
-1️⃣ Antilink: ${settings.antilink ? '✅ ON' : '❌ OFF'}
-2️⃣ Bem-vindo: ${settings.welcome ? '✅ ON' : '❌ OFF'}
-3️⃣ Anti Palavrão: ${settings.antiPalavra ? '✅ ON' : '❌ OFF'}
-4️⃣ Anti Vendas: ${settings.antiVendas ? '✅ ON' : '❌ OFF'}
-5️⃣ Anti Call: ${settings.anticall ? '✅ ON' : '❌ OFF'}
-6️⃣ Só Admin: ${settings.soAdm ? '✅ ON' : '❌ OFF'}
-7️⃣ Anti View Once: ${settings.antiViewOnce ? '✅ ON' : '❌ OFF'}
-8️⃣ Auto Baixar: ${settings.autoBaixar ? '✅ ON' : '❌ OFF'}
-
-📝 *Como configurar:*
-➤ Envie o número para ativar/desativar
-   Ex: *1* (liga/desliga antilink)
-
-⏰ *Horários automáticos:*
-➤ Abrir grupo: ${settings.openAt || 'Não definido'}
-➤ Fechar grupo: ${settings.closeAt || 'Não definido'}
-➤ Envie: *abrir HH:MM* ou *fechar HH:MM*
-
-🔄 Envie *trocar* para mudar de grupo
-🔙 Envie *sair* para encerrar
-
-╔══════════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════════╝`;
-              
-              await privateReply(configMenu);
+              logBotAction('private_config', `${privateSender} selecionou grupo ${selectedGroup.name}`);
+              await privateReply(buildConfigMenu(selectedGroup.id, selectedGroup.name));
               continue;
             } else {
-              await privateReply('❌ Opção inválida. Envie o número correspondente ao grupo.');
+              await privateReply('Opcao invalida. Envie o numero correspondente ao grupo.');
               continue;
             }
           }
           
-          // Se está no modo de configuração
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Modo de configuração ativo
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'configuring' && pConfig.selectedGroup) {
             const input = body.trim().toLowerCase();
+            const rawInput = body.trim(); // Preservar formatação original
             const selectedGroupId = pConfig.selectedGroup;
+            const selectedGroupName = pConfig.selectedGroupName || 'Grupo';
             const settings = getGroupSettings(selectedGroupId);
             
-            // Sair da configuração
+            // === SAIR ===
             if (input === 'sair' || input === 'exit') {
               pConfig.step = 'idle';
               pConfig.selectedGroup = null;
               saveDB('privateConfig', privateConfig);
-              await privateReply('✅ Configuração encerrada! Envie qualquer mensagem para iniciar novamente.');
+              await privateReply('Configuracao encerrada! Envie qualquer mensagem para iniciar novamente.');
               continue;
             }
             
-            // Trocar de grupo
+            // === MENU (reexibir) ===
+            if (input === 'menu') {
+              await privateReply(buildConfigMenu(selectedGroupId, selectedGroupName));
+              continue;
+            }
+            
+            // === TROCAR DE GRUPO ===
             if (input === 'trocar' || input === 'mudar') {
               pConfig.step = 'idle';
               pConfig.selectedGroup = null;
               saveDB('privateConfig', privateConfig);
-              // Vai cair no fluxo de detecção de admin abaixo
-            } else {
-              // Configurar opções por número
+              // Cai no fluxo de detecção de admin abaixo
+            }
+            
+            // === TOGGLE FUNÇÕES (1-10) ===
+            else {
               const toggleMap = {
                 '1': { key: 'antilink', name: 'Antilink' },
                 '2': { key: 'welcome', name: 'Bem-vindo' },
-                '3': { key: 'antiPalavra', name: 'Anti Palavrão' },
+                '3': { key: 'antiPalavra', name: 'Anti Palavrao' },
                 '4': { key: 'antiVendas', name: 'Anti Vendas' },
                 '5': { key: 'anticall', name: 'Anti Call' },
-                '6': { key: 'soAdm', name: 'Só Admin' },
+                '6': { key: 'soAdm', name: 'So Admin' },
                 '7': { key: 'antiViewOnce', name: 'Anti View Once' },
                 '8': { key: 'autoBaixar', name: 'Auto Baixar' },
+                '9': { key: 'antiSpam', name: 'Anti Spam' },
+                '10': { key: 'antiImg', name: 'Anti Imagem' },
               };
               
               if (toggleMap[input]) {
                 const opt = toggleMap[input];
                 settings[opt.key] = !settings[opt.key];
                 saveSettings();
+                logBotAction('toggle_setting', `${opt.name} = ${settings[opt.key]} em ${selectedGroupName}`);
                 
-                const status = settings[opt.key] ? '✅ ATIVADO' : '❌ DESATIVADO';
-                await privateReply(`${opt.name}: ${status}\n\nEnvie outro número para configurar ou *sair* para encerrar.`);
+                const status = settings[opt.key] ? 'ATIVADO' : 'DESATIVADO';
+                await privateReply(`${opt.name}: ${status}\n\nEnvie outro numero ou *menu* para ver opcoes.`);
                 continue;
               }
               
-              // Configurar horário de abertura
+              // === HORÁRIO DE ABERTURA ===
               if (input.startsWith('abrir ')) {
                 const time = input.replace('abrir ', '').trim();
                 if (/^\d{2}:\d{2}$/.test(time)) {
                   settings.openAt = time;
                   saveSettings();
-                  await privateReply(`✅ Grupo vai abrir automaticamente às ${time}`);
+                  logBotAction('set_open', `${selectedGroupName} abrir as ${time}`);
+                  await privateReply(`Grupo vai abrir automaticamente as ${time}`);
                   continue;
                 }
-                await privateReply('❌ Formato inválido. Use: abrir HH:MM (ex: abrir 08:00)');
+                await privateReply('Formato invalido. Use: abrir HH:MM (ex: abrir 08:00)');
                 continue;
               }
               
-              // Configurar horário de fechamento
+              // === HORÁRIO DE FECHAMENTO ===
               if (input.startsWith('fechar ')) {
                 const time = input.replace('fechar ', '').trim();
                 if (/^\d{2}:\d{2}$/.test(time)) {
                   settings.closeAt = time;
                   saveSettings();
-                  await privateReply(`✅ Grupo vai fechar automaticamente às ${time}`);
+                  logBotAction('set_close', `${selectedGroupName} fechar as ${time}`);
+                  await privateReply(`Grupo vai fechar automaticamente as ${time}`);
                   continue;
                 }
-                await privateReply('❌ Formato inválido. Use: fechar HH:MM (ex: fechar 22:00)');
+                await privateReply('Formato invalido. Use: fechar HH:MM (ex: fechar 22:00)');
                 continue;
               }
               
-              // Definir mensagem de boas-vindas
-              if (input.startsWith('bemvindo ')) {
-                const msg = body.trim().substring(9); // Preservar formatação original
+              // === MENSAGEM DE BOAS-VINDAS ===
+              if (input.startsWith('bemvindo ') || input.startsWith('bemvindo\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1); // Preservar formato
                 settings.welcomeMsg = msg;
                 saveSettings();
-                await privateReply(`✅ Mensagem de boas-vindas definida:\n\n${msg}`);
+                logBotAction('set_welcome', `Boas-vindas em ${selectedGroupName}`);
+                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variaveis disponiveis:*\n@user — Nome do membro\n@group — Nome do grupo\n@desc — Descricao do grupo`);
                 continue;
               }
               
-              // Definir mensagem de saída
-              if (input.startsWith('saida ')) {
-                const msg = body.trim().substring(6);
+              // === MENSAGEM DE SAÍDA ===
+              if (input.startsWith('saida ') || input.startsWith('saida\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
                 settings.leaveMsg = msg;
                 saveSettings();
-                await privateReply(`✅ Mensagem de saída definida:\n\n${msg}`);
+                logBotAction('set_leave', `Saida em ${selectedGroupName}`);
+                await privateReply(`Mensagem de saida definida:\n\n${msg}`);
                 continue;
               }
               
-              // Se digitou algo que não é opção
-              if (!toggleMap[input] && !['trocar', 'mudar', 'sair', 'exit'].includes(input) && !input.startsWith('abrir ') && !input.startsWith('fechar ') && !input.startsWith('bemvindo ') && !input.startsWith('saida ')) {
-                await privateReply('❌ Opção não reconhecida.\n\nEnvie um número (1-8) para ativar/desativar funções.\nOu: *abrir HH:MM*, *fechar HH:MM*, *trocar*, *sair*');
+              // === DEFINIR REGRAS ===
+              if (input.startsWith('regras ') || input.startsWith('regras\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
+                rules[selectedGroupId] = msg;
+                saveDB('rules', rules);
+                logBotAction('set_rules', `Regras em ${selectedGroupName}`);
+                await privateReply(`Regras do grupo definidas:\n\n${msg}`);
+                continue;
+              }
+              
+              // === VER COMANDOS PERSONALIZADOS ===
+              if (input === 'vercmd' || input === 'vercomandos') {
+                const cmds = customCmds[selectedGroupId];
+                if (!cmds || !Object.keys(cmds).length) {
+                  await privateReply('Nenhum comando personalizado neste grupo.\n\nUse: addcmd [nome] [texto]');
+                  continue;
+                }
+                let text = `*Comandos personalizados — ${selectedGroupName}:*\n\n`;
+                Object.entries(cmds).forEach(([name, cmd], i) => {
+                  const hasImg = cmd.imagePath ? '[IMG]' : '';
+                  const preview = cmd.text ? (cmd.text.length > 40 ? cmd.text.substring(0, 40) + '...' : cmd.text) : '(somente imagem)';
+                  const creator = cmd.creator ? cmd.creator.split('@')[0] : 'N/A';
+                  const date = cmd.createdAt ? new Date(cmd.createdAt).toLocaleDateString('pt-BR') : 'N/A';
+                  text += `${i + 1}. *!${name}* ${hasImg}\n   ${preview}\n   Criado por: ${creator} em ${date}\n\n`;
+                });
+                text += 'Para deletar: delcmd [nome]';
+                await privateReply(text);
+                continue;
+              }
+              
+              // === CRIAR COMANDO PERSONALIZADO (pelo privado) ===
+              if (input.startsWith('addcmd ')) {
+                const parts = rawInput.substring(7).split(/\s+/);
+                const cmdName = parts[0]?.toLowerCase();
+                const cmdText = parts.slice(1).join(' ');
+                if (!cmdName || !cmdText) {
+                  await privateReply('Use: addcmd [nome] [texto]\nEx: addcmd saudacao Ola pessoal!');
+                  continue;
+                }
+                if (!customCmds[selectedGroupId]) customCmds[selectedGroupId] = {};
+                customCmds[selectedGroupId][cmdName] = {
+                  text: cmdText,
+                  imagePath: null,
+                  creator: privateSender,
+                  createdAt: Date.now()
+                };
+                saveDB('customCmds', customCmds);
+                logBotAction('addcmd_private', `!${cmdName} em ${selectedGroupName}`);
+                await privateReply(`Comando *!${cmdName}* criado!\nTexto: ${cmdText}\n\nPara imagem, crie pelo grupo com !comando`);
+                continue;
+              }
+              
+              // === DELETAR COMANDO PERSONALIZADO ===
+              if (input.startsWith('delcmd ')) {
+                const cmdName = input.replace('delcmd ', '').trim().toLowerCase();
+                if (!customCmds[selectedGroupId] || !customCmds[selectedGroupId][cmdName]) {
+                  await privateReply(`Comando *!${cmdName}* nao encontrado.\nUse *vercmd* para ver a lista.`);
+                  continue;
+                }
+                if (customCmds[selectedGroupId][cmdName].imagePath) {
+                  try { fs.unlinkSync(customCmds[selectedGroupId][cmdName].imagePath); } catch {}
+                }
+                delete customCmds[selectedGroupId][cmdName];
+                saveDB('customCmds', customCmds);
+                logBotAction('delcmd_private', `!${cmdName} em ${selectedGroupName}`);
+                await privateReply(`Comando *!${cmdName}* deletado!`);
+                continue;
+              }
+              
+              // === VER AGENDAMENTOS ===
+              if (input === 'veragenda' || input === 'agendamentos') {
+                const scheds = autoMessages[selectedGroupId];
+                if (!scheds || !Object.keys(scheds).length) {
+                  await privateReply('Nenhuma mensagem agendada neste grupo.\n\nUse: agenda HH:MM [texto]');
+                  continue;
+                }
+                let text = `*Mensagens agendadas — ${selectedGroupName}:*\n\n`;
+                Object.entries(scheds).forEach(([id, sched], i) => {
+                  const preview = sched.text ? (sched.text.length > 50 ? sched.text.substring(0, 50) + '...' : sched.text) : 'Sem texto';
+                  text += `*${i + 1}.* ID: ${id}\n   Horario: ${sched.time}\n   Dias: ${sched.days || 'Todos'}\n   Texto: ${preview}\n   Status: ${sched.active !== false ? 'Ativo' : 'Pausado'}\n\n`;
+                });
+                text += 'Para remover: delagenda [id]';
+                await privateReply(text);
+                continue;
+              }
+              
+              // === AGENDAR MENSAGEM ===
+              if (input.startsWith('agenda ')) {
+                const parts = rawInput.substring(7).trim();
+                const timeMatch = parts.match(/^(\d{2}:\d{2})\s+(.+)/s);
+                if (!timeMatch) {
+                  await privateReply('Use: agenda HH:MM [texto]\nEx: agenda 08:00 Bom dia pessoal!\n\nOpcoes avancadas:\nagenda 08:00 seg,qua,sex Bom dia!');
+                  continue;
+                }
+                const time = timeMatch[1];
+                let msgContent = timeMatch[2];
+                let days = 'todos';
+                
+                // Verificar se tem dias específicos
+                const daysMatch = msgContent.match(/^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*\s+/i);
+                if (daysMatch) {
+                  days = daysMatch[0].trim().toLowerCase();
+                  msgContent = msgContent.substring(daysMatch[0].length);
+                }
+                
+                const schedId = 'sch_' + Date.now().toString(36);
+                if (!autoMessages[selectedGroupId]) autoMessages[selectedGroupId] = {};
+                autoMessages[selectedGroupId][schedId] = {
+                  time,
+                  text: msgContent,
+                  days,
+                  active: true,
+                  creator: privateSender,
+                  createdAt: Date.now()
+                };
+                saveDB('autoMessages', autoMessages);
+                logBotAction('schedule_private', `${schedId} as ${time} em ${selectedGroupName}`);
+                await privateReply(`Mensagem agendada!\n\nID: ${schedId}\nHorario: ${time}\nDias: ${days}\nTexto: ${msgContent}`);
+                continue;
+              }
+              
+              // === REMOVER AGENDAMENTO ===
+              if (input.startsWith('delagenda ')) {
+                const schedId = input.replace('delagenda ', '').trim();
+                if (!autoMessages[selectedGroupId] || !autoMessages[selectedGroupId][schedId]) {
+                  await privateReply(`Agendamento *${schedId}* nao encontrado.\nUse *veragenda* para ver a lista.`);
+                  continue;
+                }
+                delete autoMessages[selectedGroupId][schedId];
+                saveDB('autoMessages', autoMessages);
+                logBotAction('del_schedule', `${schedId} em ${selectedGroupName}`);
+                await privateReply(`Agendamento *${schedId}* removido!`);
+                continue;
+              }
+              
+              // ============================================
+              // DONO: GERENCIAR PLANO / ASSINATURA
+              // ============================================
+              if (input === 'plano' && ownerPrivate) {
+                const sub = checkSubscription(selectedGroupId);
+                const subData = subscriptions[selectedGroupId];
+                let text = `
+╔══════════════════════════╗
+  *ASSINATURA — ${selectedGroupName}*
+╚══════════════════════════╝
+
+`;
+                if (sub.active) {
+                  const expDate = new Date(sub.expiresAt).toLocaleDateString('pt-BR');
+                  const expTime = new Date(sub.expiresAt).toLocaleTimeString('pt-BR');
+                  const restante = formatTime(sub.expiresAt - Date.now());
+                  text += `Status: ATIVA\n`;
+                  text += `Tipo: ${subData?.type || 'premium'}\n`;
+                  text += `Expira em: ${expDate} as ${expTime}\n`;
+                  text += `Tempo restante: ${restante}\n`;
+                  text += `Ativado por: ${subData?.activatedBy?.split('@')[0] || 'N/A'}\n`;
+                } else {
+                  text += `Status: INATIVA\n`;
+                  text += `Motivo: ${sub.reason || 'Sem assinatura'}\n`;
+                }
+                
+                text += `
+━━━ *ACOES* ━━━━━━━━━━━━━━
+➤ *ativar [dias]* — Ativar plano
+   Ex: ativar 30
+➤ *ativar trial* — Ativar teste gratis (3 dias)
+➤ *cancelar* — Cancelar assinatura
+➤ *renovar [dias]* — Adicionar dias
+➤ *menu* — Voltar ao menu principal`;
+                
+                await privateReply(text);
+                continue;
+              }
+              
+              // === DONO: ATIVAR PLANO ===
+              if (input.startsWith('ativar ') && ownerPrivate) {
+                const param = input.replace('ativar ', '').trim();
+                
+                if (param === 'trial') {
+                  // Ativar trial de 3 dias
+                  subscriptions[selectedGroupId] = {
+                    type: 'trial',
+                    expiresAt: Date.now() + (3 * 86400000),
+                    activatedBy: privateSender,
+                    activatedAt: Date.now()
+                  };
+                  saveDB('subscriptions', subscriptions);
+                  logBotAction('activate_trial', `Trial ativado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                  await privateReply(`Trial de 3 dias ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
+                  continue;
+                }
+                
+                const dias = parseInt(param);
+                if (!dias || dias < 1 || dias > 365) {
+                  await privateReply('Use: ativar [dias] (1-365)\nEx: ativar 30\nOu: ativar trial');
+                  continue;
+                }
+                
+                subscriptions[selectedGroupId] = {
+                  type: 'premium',
+                  expiresAt: Date.now() + (dias * 86400000),
+                  activatedBy: privateSender,
+                  activatedAt: Date.now()
+                };
+                saveDB('subscriptions', subscriptions);
+                logBotAction('activate_plan', `${dias} dias em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                await privateReply(`Plano de *${dias} dias* ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
+                continue;
+              }
+              
+              // === DONO: CANCELAR PLANO ===
+              if (input === 'cancelar' && ownerPrivate) {
+                if (!subscriptions[selectedGroupId]) {
+                  await privateReply('Este grupo nao possui assinatura ativa.');
+                  continue;
+                }
+                delete subscriptions[selectedGroupId];
+                saveDB('subscriptions', subscriptions);
+                logBotAction('cancel_plan', `Cancelado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                await privateReply(`Assinatura de *${selectedGroupName}* foi CANCELADA.`);
+                continue;
+              }
+              
+              // === DONO: RENOVAR PLANO ===
+              if (input.startsWith('renovar ') && ownerPrivate) {
+                const dias = parseInt(input.replace('renovar ', '').trim());
+                if (!dias || dias < 1 || dias > 365) {
+                  await privateReply('Use: renovar [dias] (1-365)\nEx: renovar 30');
+                  continue;
+                }
+                
+                const currentSub = subscriptions[selectedGroupId];
+                const baseTime = (currentSub && currentSub.expiresAt > Date.now()) ? currentSub.expiresAt : Date.now();
+                
+                subscriptions[selectedGroupId] = {
+                  type: 'premium',
+                  expiresAt: baseTime + (dias * 86400000),
+                  activatedBy: privateSender,
+                  activatedAt: Date.now(),
+                  renewedFrom: currentSub?.expiresAt || null
+                };
+                saveDB('subscriptions', subscriptions);
+                logBotAction('renew_plan', `+${dias} dias em ${selectedGroupName}`);
+                
+                const newExpire = new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR');
+                await privateReply(`*${dias} dias* adicionados a *${selectedGroupName}*!\nNova data de expiracao: ${newExpire}\nTempo total restante: ${formatTime(subscriptions[selectedGroupId].expiresAt - Date.now())}`);
+                continue;
+              }
+              
+              // ============================================
+              // DONO: VER LOGS DE ERROS
+              // ============================================
+              if (input === 'logs' && ownerPrivate) {
+                const errors = botLogs.errors || [];
+                if (!errors.length) {
+                  await privateReply('Nenhum erro registrado.\n\nEnvie *logs acoes* para ver acoes recentes.');
+                  continue;
+                }
+                const last10 = errors.slice(-10).reverse();
+                let text = `*LOGS DE ERROS (ultimos ${last10.length}):*\n\n`;
+                last10.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  text += `${i + 1}. [${date}]\n   Contexto: ${log.context}\n   Erro: ${log.error}\n\n`;
+                });
+                text += '\nComandos:\n➤ *logs acoes* — Ver acoes recentes\n➤ *logs limpar* — Limpar todos os logs\n➤ *logs completo* — Ver todos os erros';
+                await privateReply(text);
+                continue;
+              }
+              
+              if (input === 'logs acoes' && ownerPrivate) {
+                const actions = botLogs.actions || [];
+                if (!actions.length) {
+                  await privateReply('Nenhuma acao registrada.');
+                  continue;
+                }
+                const last15 = actions.slice(-15).reverse();
+                let text = `*LOG DE ACOES (ultimas ${last15.length}):*\n\n`;
+                last15.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  text += `${i + 1}. [${date}]\n   ${log.action}: ${log.details}\n\n`;
+                });
+                await privateReply(text);
+                continue;
+              }
+              
+              if (input === 'logs limpar' && ownerPrivate) {
+                botLogs.errors = [];
+                botLogs.actions = [];
+                saveDB('botLogs', botLogs);
+                await privateReply('Todos os logs foram limpos!');
+                continue;
+              }
+              
+              if (input === 'logs completo' && ownerPrivate) {
+                const errors = botLogs.errors || [];
+                if (!errors.length) {
+                  await privateReply('Nenhum erro registrado.');
+                  continue;
+                }
+                // Enviar em blocos para não exceder limite
+                const chunks = [];
+                let current = '*TODOS OS ERROS:*\n\n';
+                errors.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  const entry = `${i + 1}. [${date}]\n   ${log.context}\n   ${log.error}\n   ${log.stack}\n\n`;
+                  if (current.length + entry.length > 3500) {
+                    chunks.push(current);
+                    current = '';
+                  }
+                  current += entry;
+                });
+                if (current) chunks.push(current);
+                for (const chunk of chunks) {
+                  await privateReply(chunk);
+                }
+                continue;
+              }
+              
+              // ============================================
+              // DONO: ESTATÍSTICAS DO GRUPO
+              // ============================================
+              if (input === 'stats' && ownerPrivate) {
+                const activity = userActivity[selectedGroupId] || {};
+                const members = Object.keys(activity).length;
+                let totalMsgs = 0;
+                let topUsers = [];
+                
+                for (const [uid, data] of Object.entries(activity)) {
+                  totalMsgs += data.messageCount || 0;
+                  topUsers.push({ id: uid, count: data.messageCount || 0, last: data.lastActive || 0 });
+                }
+                topUsers.sort((a, b) => b.count - a.count);
+                const top5 = topUsers.slice(0, 5);
+                
+                const sub = checkSubscription(selectedGroupId);
+                const cmdsCount = customCmds[selectedGroupId] ? Object.keys(customCmds[selectedGroupId]).length : 0;
+                const schedsCount = autoMessages[selectedGroupId] ? Object.keys(autoMessages[selectedGroupId]).length : 0;
+                const warnsCount = warnings[selectedGroupId] ? Object.keys(warnings[selectedGroupId]).length : 0;
+                
+                let text = `
+╔══════════════════════════╗
+  *ESTATISTICAS — ${selectedGroupName}*
+╚══════════════════════════╝
+
+*Membros ativos:* ${members}
+*Total de mensagens:* ${totalMsgs}
+*Comandos personalizados:* ${cmdsCount}
+*Agendamentos:* ${schedsCount}
+*Membros com advertencia:* ${warnsCount}
+*Assinatura:* ${sub.active ? 'Ativa' : 'Inativa'}
+
+*Top 5 mais ativos:*
+`;
+                top5.forEach((u, i) => {
+                  const num = u.id.split('@')[0];
+                  const lastDate = u.last ? new Date(u.last).toLocaleDateString('pt-BR') : 'N/A';
+                  text += `${i + 1}. ${num} — ${u.count} msgs (ultimo: ${lastDate})\n`;
+                });
+                
+                if (!top5.length) text += 'Sem dados de atividade ainda.\n';
+                
+                await privateReply(text);
+                continue;
+              }
+              
+              // === VER EXPIRAÇÃO DO PLANO (para admins) ===
+              if (input === 'expira' || input === 'vencimento' || input === 'assinatura') {
+                const sub = checkSubscription(selectedGroupId);
+                const subData = subscriptions[selectedGroupId];
+                
+                if (sub.active) {
+                  const expDate = new Date(sub.expiresAt).toLocaleDateString('pt-BR');
+                  const expTime = new Date(sub.expiresAt).toLocaleTimeString('pt-BR');
+                  const restante = formatTime(sub.expiresAt - Date.now());
+                  await privateReply(`*Assinatura — ${selectedGroupName}*\n\nStatus: ATIVA\nTipo: ${subData?.type || 'premium'}\nExpira em: ${expDate} as ${expTime}\nTempo restante: ${restante}\n\nPara renovar, entre em contato:\nwa.me/${OWNER_NUMBER}`);
+                } else {
+                  await privateReply(`*Assinatura — ${selectedGroupName}*\n\nStatus: INATIVA\n${sub.reason || 'Sem assinatura'}\n\nPara adquirir um plano:\nwa.me/${OWNER_NUMBER}`);
+                }
+                continue;
+              }
+              
+              // === OPÇÃO NÃO RECONHECIDA ===
+              const validInputs = ['1','2','3','4','5','6','7','8','9','10','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar'];
+              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs '];
+              
+              if (!validInputs.includes(input) && !startsValid.some(s => input.startsWith(s))) {
+                await privateReply(`Opcao nao reconhecida.\n\nEnvie *menu* para ver todas as opcoes.\nOu envie um *numero* (1-10) para ativar/desativar funcoes.`);
                 continue;
               }
             }
           }
           
-          // Se chegou aqui e não está em nenhum fluxo ativo, iniciar detecção de admin
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Detecção de Admin e listagem de grupos
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'idle' || !pConfig.step) {
             try {
               // Buscar todos os grupos do bot
@@ -4031,7 +4519,7 @@ const connectBot = async () => {
               
               // Também verificar cargos do bot
               for (const [gId, group] of Object.entries(allGroups)) {
-                if (adminGroups.find(g => g.id === gId)) continue; // Já está na lista
+                if (adminGroups.find(g => g.id === gId)) continue;
                 if (cargos[gId] && cargos[gId][privateSender]) {
                   const cargo = cargos[gId][privateSender];
                   if (['admin', 'mod'].includes(cargo)) {
@@ -4044,101 +4532,124 @@ const connectBot = async () => {
                 }
               }
               
-              // Se é dono do bot, mostrar todos os grupos
-              if (isOwner(privateSender)) {
-                const allGroupsList = Object.entries(allGroups).map(([gId, g]) => ({
-                  id: gId,
-                  name: g.subject,
-                  role: '👑 Dono do Bot'
-                }));
+              // ── DONO DO BOT: Mostrar TODOS os grupos + painel especial ──
+              if (ownerPrivate) {
+                const allGroupsList = Object.entries(allGroups).map(([gId, g]) => {
+                  const sub = checkSubscription(gId);
+                  const subStatus = sub.active ? 'Ativa' : 'Inativa';
+                  const expira = sub.active ? formatTime(sub.expiresAt - Date.now()) : '-';
+                  return {
+                    id: gId,
+                    name: g.subject,
+                    role: 'Dono do Bot',
+                    subStatus,
+                    expira,
+                    members: g.participants?.length || 0
+                  };
+                });
                 
                 if (allGroupsList.length) {
                   pConfig.step = 'awaiting_group_selection';
                   pConfig.adminGroups = allGroupsList;
                   saveDB('privateConfig', privateConfig);
                   
+                  // Contar estatísticas gerais
+                  const totalGrupos = allGroupsList.length;
+                  const gruposAtivos = allGroupsList.filter(g => g.subStatus === 'Ativa').length;
+                  const gruposInativos = totalGrupos - gruposAtivos;
+                  const totalErros = (botLogs.errors || []).length;
+                  
                   let text = `
-╔══════════════════════╗
-  👑 PAINEL DO DONO — SignaBOT
-╚══════════════════════╝
+╔══════════════════════════╗
+  *PAINEL DO DONO — SignaBOT*
+╚══════════════════════════╝
 
-Olá, *${message.pushName || 'Dono'}*!
-Você tem acesso a *${allGroupsList.length} grupo(s)*:
+Ola, *${message.pushName || 'Dono'}*!
 
+*RESUMO GERAL:*
+Total de grupos: ${totalGrupos}
+Assinaturas ativas: ${gruposAtivos}
+Assinaturas inativas: ${gruposInativos}
+Erros registrados: ${totalErros}
+
+━━━ *GRUPOS* ━━━━━━━━━━━━━
 `;
                   allGroupsList.forEach((g, i) => {
-                    const sub = checkSubscription(g.id);
-                    const subStatus = sub.active ? '✅' : '❌';
-                    text += `*${i + 1}.* ${g.name}\n   📊 Assinatura: ${subStatus}\n\n`;
+                    const icon = g.subStatus === 'Ativa' ? '[ON]' : '[OFF]';
+                    text += `*${i + 1}.* ${g.name}\n   ${icon} | ${g.members} membros`;
+                    if (g.subStatus === 'Ativa') text += ` | Expira: ${g.expira}`;
+                    text += `\n\n`;
                   });
                   
-                  text += `➤ Envie o *número* do grupo para configurar.\n\n╔══════════════════════╗\n      ⚡ SignaBOT ⚡\n╚══════════════════════╝`;
+                  text += `Envie o *numero* do grupo para configurar.\n\n╔══════════════════════════╗\n        ⚡ *SignaBOT* ⚡\n╚══════════════════════════╝`;
                   
                   await privateReply(text);
                   continue;
                 }
               }
               
-              // Se é admin de algum grupo
+              // ── ADMIN: Listar grupos onde é admin ──
               if (adminGroups.length > 0) {
                 pConfig.step = 'awaiting_group_selection';
                 pConfig.adminGroups = adminGroups;
                 saveDB('privateConfig', privateConfig);
                 
                 let text = `
-╔══════════════════════╗
-  ⚙️ PAINEL DE ADMIN — SignaBOT
-╚══════════════════════╝
+╔══════════════════════════╗
+  *PAINEL DE ADMIN — SignaBOT*
+╚══════════════════════════╝
 
-Olá, *${message.pushName || 'Admin'}*!
-Você é admin em *${adminGroups.length} grupo(s)*:
+Ola, *${message.pushName || 'Admin'}*!
+Voce e admin em *${adminGroups.length} grupo(s)*:
 
 `;
                 adminGroups.forEach((g, i) => {
                   const sub = checkSubscription(g.id);
-                  const subStatus = sub.active ? '✅ Ativa' : '❌ Inativa';
-                  text += `*${i + 1}.* ${g.name}\n   👤 ${g.role} | 📊 ${subStatus}\n\n`;
+                  const subStatus = sub.active ? 'Ativa' : 'Inativa';
+                  const expira = sub.active ? ` | Expira: ${formatTime(sub.expiresAt - Date.now())}` : '';
+                  text += `*${i + 1}.* ${g.name}\n   ${g.role} | Assinatura: ${subStatus}${expira}\n\n`;
                 });
                 
-                text += `➤ Envie o *número* do grupo que deseja configurar.\n\n╔══════════════════════╗\n      ⚡ SignaBOT ⚡\n╚══════════════════════╝`;
+                text += `Envie o *numero* do grupo que deseja configurar.\n\n╔══════════════════════════╗\n        ⚡ *SignaBOT* ⚡\n╚══════════════════════════╝`;
                 
                 await privateReply(text);
                 continue;
               } else {
-                // Não é admin de nenhum grupo
+                // ── NÃO É ADMIN: Redirecionar para compra ──
                 await privateReply(`
-╔══════════════════════╗
-  ⚠️ ACESSO RESTRITO ⚠️
-╚══════════════════════╝
+╔══════════════════════════╗
+  *ACESSO RESTRITO*
+╚══════════════════════════╝
 
-Olá, *${message.pushName || 'Usuário'}*!
+Ola, *${message.pushName || 'Usuario'}*!
 
-Você *não é administrador* de nenhum
-grupo onde o SignaBOT está presente.
+Voce *nao e administrador* de nenhum
+grupo onde o SignaBOT esta presente.
 
-📌 *Para usar o SignaBOT:*
-➤ Assine o plano em: wa.me/${OWNER_NUMBER}
-➤ Adicione o bot ao seu grupo
-➤ Torne-se admin do grupo
+*Para usar o SignaBOT:*
+1. Assine um plano
+2. Adicione o bot ao seu grupo
+3. Torne-se admin do grupo
 
-💰 *Planos SignaBOT:*
-➤ 7 dias — R$ XX,XX
-➤ 15 dias — R$ XX,XX
-➤ 30 dias — R$ XX,XX
-➤ 60 dias — R$ XX,XX
-➤ 90 dias — R$ XX,XX
+*Planos SignaBOT:*
+  7 dias  — R$ XX,XX
+  15 dias — R$ XX,XX
+  30 dias — R$ XX,XX
+  60 dias — R$ XX,XX
+  90 dias — R$ XX,XX
 
-📞 *Contato para assinar:*
-➤ wa.me/${OWNER_NUMBER}
+*Contato para assinar:*
+wa.me/${OWNER_NUMBER}
 
-╔══════════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════════╝`);
+╔══════════════════════════╗
+        ⚡ *SignaBOT* ⚡
+╚══════════════════════════╝`);
                 continue;
               }
             } catch (err) {
               console.log('[PRIVADO] Erro ao buscar grupos:', err.message);
-              await privateReply('❌ Erro ao processar. Tente novamente em alguns segundos.');
+              logBotError('private_admin_detection', err);
+              await privateReply('Erro ao processar. Tente novamente em alguns segundos.');
               continue;
             }
           }
@@ -4151,7 +4662,12 @@ grupo onde o SignaBOT está presente.
           // Normalizar comando para sempre usar # como prefixo interno
           const command = '#' + rawCommand.substring(1);
           const args = parts.slice(1);
-          await handleCommand(sock, message, groupId, sender, command, args, isGroup);
+          try {
+            await handleCommand(sock, message, groupId, sender, command, args, isGroup);
+          } catch (cmdErr) {
+            console.log('[HANDLE_CMD] Erro:', cmdErr.message);
+            logBotError(`handleCommand:${command}`, cmdErr);
+          }
         }
 
       } catch (err) {
