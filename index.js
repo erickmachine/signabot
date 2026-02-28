@@ -4776,31 +4776,34 @@ Voce e admin em *${adminGroups.length} grupo(s)*:
                 // ── NÃO É ADMIN: Redirecionar para compra ──
                 await privateReply(`
 ╔══════════════════════════╗
-  *ACESSO RESTRITO*
+     *ACESSO NEGADO*
 ╚══════════════════════════╝
 
-Ola, *${message.pushName || 'Usuario'}*!
+Olá, *${message.pushName || 'Usuario'}*!
 
-Voce *nao e administrador* de nenhum
-grupo onde o SignaBOT esta presente.
+Ops! Você *não é administrador* e não possui assinatura ativa de nenhum
+grupo onde o *SignaBOT* esta presente.
 
 *Para usar o SignaBOT:*
 1. Assine um plano
 2. Adicione o bot ao seu grupo
-3. Torne-se admin do grupo
+3. Torne o bot admin do grupo
 
 *Planos SignaBOT:*
-  7 dias  — R$ XX,XX
-  15 dias — R$ XX,XX
-  30 dias — R$ XX,XX
-  60 dias — R$ XX,XX
-  90 dias — R$ XX,XX
+  1 dias  — R$ 1,00
+  7 dias  — R$ 5,00
+  30 dias — R$ 10,00
+  60 dias — R$ 15,00
+  90 dias — R$ 20,00
+
+  *PAGAMENTO PIX (MANUAL)*
+  jeisiel-erick@jim.com
 
 *Contato para assinar:*
 wa.me/${OWNER_NUMBER}
 
 ╔══════════════════════════╗
-        ⚡ *SignaBOT* ⚡
+      ⚡ *SignaBOT* ⚡
 ╚══════════════════════════╝`);
                 continue;
               }
