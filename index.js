@@ -1805,7 +1805,7 @@ if (command === '#tiktok' || command === '#tt') {
   // #bemvindo_msg — Definir mensagem personalizada de boas-vindas
   if (command === '#bemvindo_msg') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
-    if (!args.length) return reply('❌ Use: #bemvindo_msg [texto]\n\nVariáveis disponíveis:\n@user — Menciona o membro\n@group — Nome do grupo\n@desc — Descrição do grupo\n@numero — Número formatado\n@membros — Total de membros');
+    if (!args.length) return reply('❌ Use: #bemvindo_msg [texto]\n\nVariáveis disponíveis (use @var ou {var}):\n@user ou {user} ou {nome} — Menciona o membro\n@group ou {group} ou {grupo} — Nome do grupo\n@desc ou {desc} — Descrição do grupo\n@numero ou {numero} — Número formatado (+55...)\n@membros ou {membros} ou {total} — Total de membros');
     settings.welcomeMsg = args.join(' ');
     saveSettings();
     return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
@@ -2164,6 +2164,35 @@ if (command === '#sorteio') {
   // ===========================================================
   // RANKING / ATIVIDADE
   // ===========================================================
+
+  // ========== HELPER: Substituição de variáveis em mensagens ==========
+  // Suporta tanto @user / @group quanto {user} / {nome} / {group} etc.
+  const replaceVars = (text, vars) => {
+    let result = text;
+    for (const [key, value] of Object.entries(vars)) {
+      // Suporta: @key, {key}
+      result = result
+        .replace(new RegExp(`@${key}`, 'gi'), value)
+        .replace(new RegExp(`\\{${key}\\}`, 'gi'), value);
+    }
+    // Aliases comuns em português
+    if (vars.user) {
+      result = result
+        .replace(/@nome/gi, vars.user)
+        .replace(/\{nome\}/gi, vars.user);
+    }
+    if (vars.group) {
+      result = result
+        .replace(/@grupo/gi, vars.group)
+        .replace(/\{grupo\}/gi, vars.group);
+    }
+    if (vars.membros) {
+      result = result
+        .replace(/@total/gi, vars.membros)
+        .replace(/\{total\}/gi, vars.membros);
+    }
+    return result;
+  };
 
   // ========== HELPER: Resolve número real a partir do JID ==========
   // JIDs com formato @lid (ex: 212171434754106@lid) são IDs internos do WhatsApp.
@@ -2871,7 +2900,7 @@ ${isGroup ? `👥 *Grupo:* ${groupId}` : '💬 *Chat privado*'}
    ➤ Jogos online: 25+ Mbps, Ping < 50ms
    ➤ Videochamada: 10 Mbps
 
-💡 *Dica:* Teste conectado ao Wi-Fi E
+��� *Dica:* Teste conectado ao Wi-Fi E
    aos dados móveis para comparar!
 
 ╔══════════════════╗
@@ -3064,7 +3093,7 @@ ${dicas.length ? '💡 *Sugestões de melhoria:*\n' + dicas.join('\n') : '✅ Su
     return reply(`
 ╔══════════════════╗
      📶 MELHORAR SINAL WI-FI 📶
-╚══════════════════╝
+╚═════════════���════╝
 
 📍 *POSICIONAMENTO*
 ➤ Coloque o roteador no centro da casa
@@ -3392,7 +3421,7 @@ na internet. Cada conexão tem um.
 ➤ Cmd+Shift+4 — Screenshot parcial
 ➤ Cmd+Option+Esc — Forçar saída
 
-╔══════════════════╗
+╔���═════════════════╗
       ⚡ SignaBOT ⚡
 ╚══════════════════╝`);
     }
@@ -3746,10 +3775,11 @@ na internet. Cada conexão tem um.
         if (cmdText) {
           try {
             const meta = await sock.groupMetadata(groupId);
-            cmdText = cmdText
-              .replace(/@user/g, `@${sender.split('@')[0]}`)
-              .replace(/@group/g, meta.subject || groupId)
-              .replace(/@membros/g, String(meta.participants.length));
+            cmdText = replaceVars(cmdText, {
+              user: `@${sender.split('@')[0]}`,
+              group: meta.subject || groupId,
+              membros: String(meta.participants.length),
+            });
           } catch {}
         }
 
@@ -4439,7 +4469,7 @@ const connectBot = async () => {
                 settings.welcomeMsg = msg;
                 saveSettings();
                 logBotAction('set_welcome', `Boas-vindas em ${selectedGroupName}`);
-                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variáveis disponíveis:*\n@user — Menciona o membro\n@group — Nome do grupo\n@desc — Descrição do grupo\n@numero — Número formatado (+55 XX 9XXXX-XXXX)\n@membros — Total de membros no grupo`);
+                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variáveis disponíveis (use @var ou {var}):*\n@user ou {user} ou {nome} — Menciona o membro\n@group ou {group} ou {grupo} — Nome do grupo\n@desc ou {desc} — Descrição do grupo\n@numero ou {numero} — Número formatado (+55 XX 9XXXX-XXXX)\n@membros ou {membros} ou {total} — Total de membros`);
                 continue;
               }
               
@@ -5110,12 +5140,13 @@ wa.me/${OWNER_NUMBER}
             return `+${rawNum}`;
           })();
 
-          welcomeText = welcomeText
-            .replace(/@user/g, `@${participant.split('@')[0]}`)
-            .replace(/@group/g, meta.subject || 'o grupo')
-            .replace(/@desc/g, meta.desc || '')
-            .replace(/@numero/g, numFormatted)
-            .replace(/@membros/g, String(memberCount));
+          welcomeText = replaceVars(welcomeText, {
+            user: `@${participant.split('@')[0]}`,
+            group: meta.subject || 'o grupo',
+            desc: meta.desc || '',
+            numero: numFormatted,
+            membros: String(memberCount),
+          });
         } catch {}
 
         try {
