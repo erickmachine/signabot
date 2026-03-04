@@ -503,6 +503,12 @@ if (command === '#status') {
 
 ⚙️ *CONFIGURAÇÕES*
 ➤ #bemvindo [on/off]
+➤ #bemvindo_msg [texto]
+➤ #bemvindo_cor [hex]
+➤ #bemvindo_acento [hex]
+➤ #bemvindo_bg (+ imagem)
+➤ #bemvindo_preview
+➤ #bemvindo_reset
 ➤ #antilink [on/off]
 ➤ #antivendas [on/off]
 ➤ #so_adm [on/off]
@@ -1791,9 +1797,102 @@ if (command === '#tiktok' || command === '#tt') {
 
   if (command === '#bemvindo') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
-    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('Boas-vindas ativadas!'); }
+    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('✅ Boas-vindas ativadas!\n\n💡 *Dica:* Use os comandos abaixo para personalizar:\n• #bemvindo_msg [texto] — Mensagem personalizada\n• #bemvindo_cor [hex] — Cor do fundo (ex: #0f172a)\n• #bemvindo_acento [hex] — Cor de destaque (ex: #6366f1)\n• #bemvindo_bg — Envie imagem de fundo junto com este comando\n\nVariáveis disponíveis: @user @group @desc @numero @membros'); }
     if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('Boas-vindas desativadas.'); }
-    return reply(`Boas-vindas: ${settings.welcome ? 'Ativado' : 'Desativado'}\nUse: #bemvindo [on/off]`);
+    return reply(`Boas-vindas: ${settings.welcome ? '✅ Ativado' : '❌ Desativado'}\nUse: #bemvindo [on/off]`);
+  }
+
+  // #bemvindo_msg — Definir mensagem personalizada de boas-vindas
+  if (command === '#bemvindo_msg') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('❌ Use: #bemvindo_msg [texto]\n\nVariáveis disponíveis:\n@user — Menciona o membro\n@group — Nome do grupo\n@desc — Descrição do grupo\n@numero — Número formatado\n@membros — Total de membros');
+    settings.welcomeMsg = args.join(' ');
+    saveSettings();
+    return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
+  }
+
+  // #bemvindo_cor — Definir cor de fundo do card de boas-vindas (hex)
+  if (command === '#bemvindo_cor') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const hex = args[0]?.replace('#', '');
+    if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return reply('❌ Use: #bemvindo_cor [cor hex]\nEx: #bemvindo_cor 0f172a\nEx: #bemvindo_cor 1a1a2e');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    settings.welcomeBgColor = { r, g, b };
+    saveSettings();
+    return reply(`✅ Cor de fundo definida: #${hex}`);
+  }
+
+  // #bemvindo_acento — Definir cor de acento/destaque do card
+  if (command === '#bemvindo_acento') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const hex = args[0]?.replace('#', '');
+    if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return reply('❌ Use: #bemvindo_acento [cor hex]\nEx: #bemvindo_acento 6366f1\nEx: #bemvindo_acento e91e63');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    settings.welcomeAccentColor = { r, g, b };
+    saveSettings();
+    return reply(`✅ Cor de destaque definida: #${hex}`);
+  }
+
+  // #bemvindo_bg — Definir imagem de fundo personalizada (enviar junto com imagem)
+  if (command === '#bemvindo_bg') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const imageMsg = message.message?.imageMessage;
+    if (!imageMsg) return reply('❌ Envie uma imagem junto com o comando #bemvindo_bg\nExemplo: Envie a imagem com a legenda "#bemvindo_bg"');
+    try {
+      const imgBuffer = await downloadMedia(imageMsg, 'image');
+      if (!imgBuffer) return reply('❌ Erro ao baixar imagem.');
+      const bgDir = path.join(DATA_DIR, 'welcome_bg');
+      if (!fs.existsSync(bgDir)) fs.mkdirSync(bgDir, { recursive: true });
+      const bgPath = path.join(bgDir, `${groupId.replace('@g.us', '')}_bg.jpg`);
+      // Redimensionar para 800x400 e salvar
+      await sharp(imgBuffer).resize(800, 400, { fit: 'cover' }).jpeg({ quality: 85 }).toFile(bgPath);
+      // Remover bg anterior se existia
+      if (settings.welcomeBgPath && settings.welcomeBgPath !== bgPath) {
+        try { fs.unlinkSync(settings.welcomeBgPath); } catch {}
+      }
+      settings.welcomeBgPath = bgPath;
+      saveSettings();
+      return reply('✅ Imagem de fundo de boas-vindas definida com sucesso!\n\nAgora o card de boas-vindas usará esta imagem como plano de fundo.');
+    } catch (err) {
+      console.log('[WELCOME_BG] Erro:', err.message);
+      return reply('❌ Erro ao salvar imagem de fundo.');
+    }
+  }
+
+  // #bemvindo_reset — Resetar configurações de boas-vindas para padrão
+  if (command === '#bemvindo_reset') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (settings.welcomeBgPath) {
+      try { fs.unlinkSync(settings.welcomeBgPath); } catch {}
+    }
+    settings.welcomeMsg = '';
+    settings.welcomeBgColor = null;
+    settings.welcomeAccentColor = null;
+    settings.welcomeBgPath = null;
+    saveSettings();
+    return reply('✅ Boas-vindas resetadas para o padrão do SignaBot!');
+  }
+
+  // #bemvindo_preview — Prévia da imagem de boas-vindas
+  if (command === '#bemvindo_preview') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    await reply('⏳ Gerando prévia do card de boas-vindas...');
+    // Simular como se o próprio sender fosse entrar no grupo
+    try {
+      const fakeParticipants = [sender];
+      sock.ev.emit('group-participants.update', {
+        id: groupId,
+        participants: fakeParticipants,
+        action: 'add'
+      });
+      return;
+    } catch (err) {
+      return reply('❌ Erro ao gerar prévia: ' + err.message);
+    }
   }
 
   if (command === '#antilink') {
@@ -2066,16 +2165,61 @@ if (command === '#sorteio') {
   // RANKING / ATIVIDADE
   // ===========================================================
 
+  // ========== HELPER: Resolve número real a partir do JID ==========
+  // JIDs com formato @lid (ex: 212171434754106@lid) são IDs internos do WhatsApp.
+  // Precisamos mapear pelo grupo para obter o número real (@s.whatsapp.net).
+  const resolveParticipantJid = async (uid, gId) => {
+    // Se já é um JID de número real, retornar como está
+    if (uid.endsWith('@s.whatsapp.net')) return uid;
+    // Se é um @lid, buscar no metadata do grupo
+    if (uid.endsWith('@lid') && gId) {
+      try {
+        const meta = await sock.groupMetadata(gId);
+        const match = meta.participants.find(p => p.id === uid || p.lid === uid);
+        if (match) return match.id; // retorna o @s.whatsapp.net
+      } catch {}
+    }
+    return uid; // fallback
+  };
+
+  // ========== HELPER: Formata número como +55 XX 99999-9999 ==========
+  const formatPhoneNumber = (jid) => {
+    const num = jid.split('@')[0].replace(/\D/g, '');
+    if (num.startsWith('55') && num.length >= 12) {
+      // Brasileiro: 55 + DDD(2) + número(8-9)
+      const ddd = num.substring(2, 4);
+      const rest = num.substring(4);
+      if (rest.length === 9) {
+        return `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`;
+      } else if (rest.length === 8) {
+        return `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+      }
+      return `+${num}`;
+    }
+    // Internacional genérico
+    return `+${num}`;
+  };
+
   if (command === '#rankativos') {
     const activity = userActivity[groupId];
     if (!activity || !Object.keys(activity).length) return reply('Nenhuma atividade registrada ainda.');
     const sorted = Object.entries(activity).sort((a, b) => b[1].messageCount - a[1].messageCount).slice(0, 10);
-    let text = '*Top 10 Membros Mais Ativos:*\n\n';
-    const medals = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
-    sorted.forEach(([uid, data], i) => {
-      text += `${medals[i]}. @${uid.split('@')[0]} — ${data.messageCount} msgs\n`;
-    });
-    return sock.sendMessage(groupId, { text, mentions: sorted.map(([uid]) => uid) });
+
+    // Resolver JIDs reais e montar texto
+    const mentionJids = [];
+    let text = '🏆 *Top 10 Membros Mais Ativos:*\n\n';
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const [uid, data] = sorted[i];
+      const realJid = await resolveParticipantJid(uid, groupId);
+      const numFormatted = formatPhoneNumber(realJid);
+      const lastDate = data.lastActive ? new Date(data.lastActive).toLocaleDateString('pt-BR') : 'N/A';
+      text += `${medals[i]} @${realJid.split('@')[0]} (${numFormatted}) — ${data.messageCount} msgs\n`;
+      mentionJids.push(realJid);
+    }
+
+    return sock.sendMessage(groupId, { text, mentions: mentionJids });
   }
 
   if (command === '#rankativosg') {
@@ -2087,9 +2231,16 @@ if (command === '#sorteio') {
       .sort((a, b) => b[1].messageCount - a[1].messageCount)
       .slice(0, 5);
     if (!todayEntries.length) return reply('Nenhuma atividade hoje.');
-    let text = '*Top 5 Ativos Hoje:*\n\n';
-    todayEntries.forEach(([uid, data], i) => { text += `${i + 1}. @${uid.split('@')[0]} — ${data.messageCount} msgs\n`; });
-    return sock.sendMessage(groupId, { text, mentions: todayEntries.map(([uid]) => uid) });
+    let text = '🏆 *Top 5 Ativos Hoje:*\n\n';
+    const mentionJids = [];
+    for (let i = 0; i < todayEntries.length; i++) {
+      const [uid, data] = todayEntries[i];
+      const realJid = await resolveParticipantJid(uid, groupId);
+      const numFormatted = formatPhoneNumber(realJid);
+      text += `${i + 1}. @${realJid.split('@')[0]} (${numFormatted}) — ${data.messageCount} msgs\n`;
+      mentionJids.push(realJid);
+    }
+    return sock.sendMessage(groupId, { text, mentions: mentionJids });
   }
 
   // ===========================================================
@@ -3453,9 +3604,15 @@ na internet. Cada conexão tem um.
     if (!isGroup) return reply('❌ Use em um grupo.');
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Apenas admins e mods podem criar comandos.');
     
-    if (!args.length) return reply('❌ Use: !comando [nome] [texto]\nEnvie com uma imagem para associar ao comando!\n\nExemplo:\n!comando saudacao Olá pessoal, bem-vindos!');
+    if (!args.length) return reply(`❌ Use: !comando [nome] [texto]\n\nVocê pode enviar com uma imagem para associar ao comando!\n\n📌 *Exemplos:*\n!comando saudacao Olá @user, bem-vindo!\n!comando regras Respeite todos!\n\n💡 *Variáveis disponíveis no texto:*\n@user — Menciona quem usou o comando\n@group — Nome do grupo\n@membros — Total de membros`);
     
     const cmdName = args[0].toLowerCase();
+
+    // Validar nome do comando
+    if (!/^[a-z0-9_-]+$/.test(cmdName)) {
+      return reply('❌ Nome do comando inválido! Use apenas letras, números, - e _\nEx: saudacao, regra_1, bem-vindo');
+    }
+
     const cmdText = args.slice(1).join(' ');
     
     if (!cmdText && !message.message?.imageMessage) {
@@ -3475,7 +3632,8 @@ na internet. Cada conexão tem um.
           const imgDir = path.join(DATA_DIR, 'cmd_images');
           if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
           imagePath = path.join(imgDir, `${groupId.replace('@g.us', '')}_${cmdName}_${Date.now()}.jpg`);
-          fs.writeFileSync(imagePath, imageBuffer);
+          // Redimensionar e otimizar imagem antes de salvar
+          await sharp(imageBuffer).resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toFile(imagePath);
         }
       } catch (err) {
         console.log('[COMANDO] Erro ao salvar imagem:', err.message);
@@ -3495,14 +3653,19 @@ na internet. Cada conexão tem um.
       text: cmdText || '',
       imagePath: imagePath,
       creator: sender,
-      createdAt: Date.now()
+      creatorName: senderName,
+      createdAt: Date.now(),
+      useCount: customCmds[groupId][cmdName]?.useCount || 0 // manter contagem se existia
     };
     saveDB('customCmds', customCmds);
     
     let confirmMsg = `✅ Comando *!${cmdName}* criado com sucesso!\n\n`;
-    if (cmdText) confirmMsg += `📝 Texto: ${cmdText}\n`;
-    if (imagePath) confirmMsg += `🖼️ Imagem: Anexada\n`;
-    confirmMsg += `\n💡 Para usar: !${cmdName}`;
+    if (cmdText) confirmMsg += `📝 *Texto:* ${cmdText}\n`;
+    if (imagePath) confirmMsg += `🖼️ *Imagem:* Anexada\n`;
+    if (cmdText.includes('@user') || cmdText.includes('@group') || cmdText.includes('@membros')) {
+      confirmMsg += `\n🔄 *Variáveis detectadas* — serão substituídas ao usar o comando.`;
+    }
+    confirmMsg += `\n\n💡 Para usar: *!${cmdName}*`;
     
     return reply(confirmMsg);
   }
@@ -3513,22 +3676,32 @@ na internet. Cada conexão tem um.
     
     const cmds = customCmds[groupId];
     if (!cmds || !Object.keys(cmds).length) {
-      return reply('📋 Nenhum comando personalizado criado neste grupo.\n\nUse !comando [nome] [texto] para criar!');
+      return reply('📋 Nenhum comando personalizado criado neste grupo.\n\nUse *!comando [nome] [texto]* para criar!\nExemplo: !comando saudacao Olá @user!');
     }
     
+    const total = Object.keys(cmds).length;
     let text = `
 ╔══════════════════╗
      📋 COMANDOS DO GRUPO 📋
 ╚══════════════════╝
 
+📊 *Total:* ${total} comando(s)
+
 `;
     Object.entries(cmds).forEach(([name, cmd], i) => {
       const hasImg = cmd.imagePath ? '🖼️' : '📝';
-      const preview = cmd.text ? (cmd.text.length > 40 ? cmd.text.substring(0, 40) + '...' : cmd.text) : '(somente imagem)';
-      text += `${i + 1}. ${hasImg} *!${name}*\n   ➤ ${preview}\n\n`;
+      const preview = cmd.text
+        ? (cmd.text.length > 45 ? cmd.text.substring(0, 45) + '...' : cmd.text)
+        : '(somente imagem)';
+      const uses = cmd.useCount || 0;
+      const creator = cmd.creatorName || cmd.creator?.split('@')[0] || 'N/A';
+      text += `${i + 1}. ${hasImg} *!${name}*\n   ➤ ${preview}\n   👤 ${creator} | 🔢 ${uses} uso(s)\n\n`;
     });
     
-    text += `╔══════════════════╗
+    text += `*Para usar:* !nome_do_comando
+*Para deletar:* #delcomando [nome]
+
+╔══════════════════╗
       ⚡ SignaBOT ⚡
 ╚══════════════════╝`;
     
@@ -3568,16 +3741,36 @@ na internet. Cada conexão tem um.
     
     if (cmd) {
       try {
+        // Substituir variáveis no texto do comando
+        let cmdText = cmd.text || '';
+        if (cmdText) {
+          try {
+            const meta = await sock.groupMetadata(groupId);
+            cmdText = cmdText
+              .replace(/@user/g, `@${sender.split('@')[0]}`)
+              .replace(/@group/g, meta.subject || groupId)
+              .replace(/@membros/g, String(meta.participants.length));
+          } catch {}
+        }
+
+        // Incrementar contador de uso
+        customCmds[groupId][cmdName].useCount = (customCmds[groupId][cmdName].useCount || 0) + 1;
+        saveDB('customCmds', customCmds);
+
         // Se tem imagem e texto
         if (cmd.imagePath && fs.existsSync(cmd.imagePath)) {
           const imgBuffer = fs.readFileSync(cmd.imagePath);
           await sock.sendMessage(groupId, {
             image: imgBuffer,
-            caption: cmd.text || ''
+            caption: cmdText || '',
+            mentions: cmdText.includes(`@${sender.split('@')[0]}`) ? [sender] : []
           }, { quoted: message });
-        } else if (cmd.text) {
-          // Só texto
-          await reply(cmd.text);
+        } else if (cmdText) {
+          // Só texto — mencionar usuário se @user foi usado
+          await sock.sendMessage(groupId, {
+            text: cmdText,
+            mentions: cmdText.includes(`@${sender.split('@')[0]}`) ? [sender] : []
+          }, { quoted: message });
         }
         return;
       } catch (err) {
@@ -4246,7 +4439,7 @@ const connectBot = async () => {
                 settings.welcomeMsg = msg;
                 saveSettings();
                 logBotAction('set_welcome', `Boas-vindas em ${selectedGroupName}`);
-                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variaveis disponiveis:*\n@user — Nome do membro\n@group — Nome do grupo\n@desc — Descricao do grupo`);
+                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variáveis disponíveis:*\n@user — Menciona o membro\n@group — Nome do grupo\n@desc — Descrição do grupo\n@numero — Número formatado (+55 XX 9XXXX-XXXX)\n@membros — Total de membros no grupo`);
                 continue;
               }
               
@@ -4616,11 +4809,33 @@ const connectBot = async () => {
 
 *Top 5 mais ativos:*
 `;
-                top5.forEach((u, i) => {
-                  const num = u.id.split('@')[0];
+                for (let i = 0; i < top5.length; i++) {
+                  const u = top5[i];
+                  // Resolver JID real (caso seja @lid interno do WhatsApp)
+                  let realJid = u.id;
+                  if (u.id.endsWith('@lid')) {
+                    try {
+                      const allGroups2 = await sock.groupFetchAllParticipating();
+                      const gData = allGroups2[selectedGroupId];
+                      if (gData) {
+                        const match = gData.participants.find(p => p.id === u.id || p.lid === u.id);
+                        if (match) realJid = match.id;
+                      }
+                    } catch {}
+                  }
+                  // Formatar número legível
+                  const rawNum = realJid.split('@')[0];
+                  let numFormatted = `+${rawNum}`;
+                  if (rawNum.startsWith('55') && rawNum.length >= 12) {
+                    const ddd = rawNum.substring(2, 4);
+                    const rest = rawNum.substring(4);
+                    numFormatted = rest.length >= 9
+                      ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
+                      : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+                  }
                   const lastDate = u.last ? new Date(u.last).toLocaleDateString('pt-BR') : 'N/A';
-                  text += `${i + 1}. ${num} — ${u.count} msgs (ultimo: ${lastDate})\n`;
-                });
+                  text += `${i + 1}. ${numFormatted} — ${u.count} msgs (ultimo: ${lastDate})\n`;
+                }
                 
                 if (!top5.length) text += 'Sem dados de atividade ainda.\n';
                 
@@ -4867,7 +5082,7 @@ wa.me/${OWNER_NUMBER}
     const sub = checkSubscription(groupId);
     if (!sub.active) return;
 
-    if (action === 'add' && settings.welcome) {
+  if (action === 'add' && settings.welcome) {
       for (const participant of participants) {
         // Verificar lista negra
         if (blacklist[participant]) {
@@ -4875,26 +5090,188 @@ wa.me/${OWNER_NUMBER}
           continue;
         }
 
-        const welcomeMsg = settings.welcomeMsg ||
-          `Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\nDigite #menu para ver os comandos disponíveis.`;
+        // Substituir variáveis na mensagem de boas-vindas
+        let welcomeText = settings.welcomeMsg ||
+          `🎉 Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\n👋 Que bom ter você aqui!\nDigite *#menu* para ver os comandos disponíveis.`;
+
+        // Substituição de variáveis: @user, @group, @desc, @numero
+        try {
+          const meta = await sock.groupMetadata(groupId);
+          const memberCount = meta.participants.length;
+          const numFormatted = (() => {
+            const rawNum = participant.split('@')[0];
+            if (rawNum.startsWith('55') && rawNum.length >= 12) {
+              const ddd = rawNum.substring(2, 4);
+              const rest = rawNum.substring(4);
+              return rest.length >= 9
+                ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
+                : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+            }
+            return `+${rawNum}`;
+          })();
+
+          welcomeText = welcomeText
+            .replace(/@user/g, `@${participant.split('@')[0]}`)
+            .replace(/@group/g, meta.subject || 'o grupo')
+            .replace(/@desc/g, meta.desc || '')
+            .replace(/@numero/g, numFormatted)
+            .replace(/@membros/g, String(memberCount));
+        } catch {}
 
         try {
+          // ── Tentar gerar imagem de boas-vindas personalizada ──
           const ppUrl = await sock.profilePictureUrl(participant, 'image').catch(() => null);
-          if (ppUrl) {
+
+          // Verificar se tem imagem de fundo customizada configurada
+          const welcomeBgPath = settings.welcomeBgPath || null;
+
+          // Gerar imagem usando sharp (compositing)
+          let welcomeImage = null;
+          try {
+            // Dimensões do card
+            const W = 800, H = 400;
+
+            // 1. Criar fundo base (gradiente simulado com retângulos sobrepostos)
+            const bgColor = settings.welcomeBgColor || { r: 15, g: 23, b: 42 }; // Azul escuro padrão
+            const accentColor = settings.welcomeAccentColor || { r: 99, g: 102, b: 241 }; // Índigo
+
+            // SVG do fundo com design moderno
+            const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:rgb(${bgColor.r},${bgColor.g},${bgColor.b});stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:rgb(${Math.min(bgColor.r+20,255)},${Math.min(bgColor.g+15,255)},${Math.min(bgColor.b+40,255)});stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:rgb(${accentColor.r},${accentColor.g},${accentColor.b});stop-opacity:0.8" />
+                  <stop offset="100%" style="stop-color:rgb(${Math.min(accentColor.r+30,255)},${accentColor.g},${Math.min(accentColor.b+50,255)});stop-opacity:0.3" />
+                </linearGradient>
+              </defs>
+              <!-- Fundo principal -->
+              <rect width="${W}" height="${H}" fill="url(#bg)" rx="20"/>
+              <!-- Faixa decorativa superior -->
+              <rect x="0" y="0" width="${W}" height="6" fill="url(#accent)" rx="20"/>
+              <!-- Faixa decorativa inferior -->
+              <rect x="0" y="${H-6}" width="${W}" height="6" fill="url(#accent)"/>
+              <!-- Círculo decorativo fundo direito -->
+              <circle cx="${W-80}" cy="${H/2}" r="180" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" fill-opacity="0.06"/>
+              <circle cx="${W-40}" cy="60" r="80" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" fill-opacity="0.08"/>
+              <!-- Painel da foto de perfil (círculo branco) -->
+              <circle cx="200" cy="${H/2}" r="108" fill="white" fill-opacity="0.1"/>
+              <circle cx="200" cy="${H/2}" r="104" fill="none" stroke="url(#accent)" stroke-width="4"/>
+            </svg>`;
+
+            let compositeInputs = [];
+
+            // 2. Foto de perfil (circular)
+            if (ppUrl) {
+              try {
+                const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 8000 });
+                const ppBuffer = Buffer.from(ppResp.data);
+
+                // Criar máscara circular para a foto de perfil
+                const circleMask = Buffer.from(
+                  `<svg width="200" height="200"><circle cx="100" cy="100" r="100" fill="white"/></svg>`
+                );
+                const circularPp = await sharp(ppBuffer)
+                  .resize(200, 200, { fit: 'cover' })
+                  .composite([{ input: circleMask, blend: 'dest-in' }])
+                  .png()
+                  .toBuffer();
+
+                compositeInputs.push({
+                  input: circularPp,
+                  left: 100,
+                  top: Math.round(H / 2) - 100
+                });
+              } catch {}
+            }
+
+            // 3. Texto SVG sobreposto (nome, saudação, grupo)
+            const displayName = participant.split('@')[0];
+            const groupName = await sock.groupMetadata(groupId).then(m => m.subject).catch(() => 'Grupo');
+            const memberCount2 = await sock.groupMetadata(groupId).then(m => m.participants.length).catch(() => '?');
+
+            // Truncar nome longo
+            const shortName = displayName.length > 18 ? displayName.substring(0, 18) + '...' : displayName;
+            const shortGroup = groupName.length > 24 ? groupName.substring(0, 24) + '...' : groupName;
+
+            const textSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+              <!-- BEM-VINDO pequeno -->
+              <text x="340" y="130" font-family="Arial, sans-serif" font-size="18" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" font-weight="bold" letter-spacing="4">BEM-VINDO(A)!</text>
+              <!-- Nome do usuário grande -->
+              <text x="340" y="210" font-family="Arial, sans-serif" font-size="42" fill="white" font-weight="bold">+${shortName}</text>
+              <!-- Separador -->
+              <rect x="340" y="228" width="260" height="3" fill="url(#accent2)" rx="2"/>
+              <!-- Nome do grupo -->
+              <text x="340" y="268" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.7)">📍 ${shortGroup}</text>
+              <!-- Membros -->
+              <text x="340" y="308" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.55)">👥 Membro número ${memberCount2}</text>
+              <!-- SignaBot rodapé -->
+              <text x="340" y="360" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.35)">⚡ SignaBOT</text>
+              <defs>
+                <linearGradient id="accent2" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:rgb(${accentColor.r},${accentColor.g},${accentColor.b});stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:rgba(255,255,255,0);stop-opacity:0" />
+                </linearGradient>
+              </defs>
+            </svg>`;
+
+            compositeInputs.push({
+              input: Buffer.from(textSvg),
+              left: 0,
+              top: 0
+            });
+
+            // Compor tudo junto
+            let baseImage = sharp(Buffer.from(bgSvg));
+
+            // Se tem imagem de fundo personalizada, usar ela como base
+            if (welcomeBgPath && fs.existsSync(welcomeBgPath)) {
+              try {
+                baseImage = sharp(welcomeBgPath).resize(W, H, { fit: 'cover' });
+                // Adicionar overlay escuro para legibilidade
+                compositeInputs.unshift({
+                  input: Buffer.from(`<svg width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="rgba(0,0,0,0.55)" rx="20"/></svg>`),
+                  left: 0, top: 0
+                });
+              } catch {}
+            }
+
+            welcomeImage = await baseImage
+              .composite(compositeInputs)
+              .jpeg({ quality: 90 })
+              .toBuffer();
+
+          } catch (imgErr) {
+            console.log('[WELCOME IMG] Erro ao gerar imagem:', imgErr.message);
+            welcomeImage = null;
+          }
+
+          // Enviar mensagem com imagem ou só texto
+          if (welcomeImage) {
             await sock.sendMessage(groupId, {
-              image: { url: ppUrl },
-              caption: welcomeMsg,
+              image: welcomeImage,
+              caption: welcomeText,
+              mentions: [participant],
+            });
+          } else if (ppUrl) {
+            // Fallback: foto de perfil simples
+            const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 8000 });
+            await sock.sendMessage(groupId, {
+              image: Buffer.from(ppResp.data),
+              caption: welcomeText,
               mentions: [participant],
             });
           } else {
             await sock.sendMessage(groupId, {
-              text: welcomeMsg,
+              text: welcomeText,
               mentions: [participant],
             });
           }
         } catch {
           await sock.sendMessage(groupId, {
-            text: welcomeMsg,
+            text: welcomeText,
             mentions: [participant],
           }).catch(() => {});
         }
