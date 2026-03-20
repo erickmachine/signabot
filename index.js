@@ -25,22 +25,44 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const PREFIXES = ['#', '/', '!'];
 const BOT_NAME = 'SignaBot';
 const OWNER_NUMBER = '5592999652961';
-const BOT_NUMBER = '557183477259';
 
+// ========== ADICIONADO: Número do bot que aparece nos logs ==========
+const BOT_NUMBER = '557183477259'; // Número do bot que aparece nos logs
+
+// ========== CORREÇÃO: Lista de JIDs do dono com número do bot ==========
 const OWNER_JIDS = [
   `${OWNER_NUMBER}@s.whatsapp.net`,
   '559299652961@s.whatsapp.net',
   `${BOT_NUMBER}@s.whatsapp.net`,
-  '212171434754106@lid'
+  '212171434754106@lid' // Formato que aparece nos logs
 ];
 
+// ========== FUNÇÃO ISOWNER CORRIGIDA ==========
 const isOwner = (sender) => {
+  // Verificar se o sender está na lista de JIDs do dono
   const isInList = OWNER_JIDS.includes(sender);
+  
+  // Extrair apenas números do sender (remover @lid, @s.whatsapp.net, etc.)
   let senderNumber = sender.split('@')[0];
   senderNumber = senderNumber.replace(/\D/g, '');
+  
+  // Números para comparação (apenas dígitos)
   const ownerNumber = OWNER_NUMBER.replace(/\D/g, '');
   const botNumber = BOT_NUMBER.replace(/\D/g, '');
+  
+  // Verificar se o número corresponde ao dono ou ao bot
   const isNumberMatch = senderNumber === ownerNumber || senderNumber === botNumber;
+  
+  // Log para debug
+  console.log(`[DEBUG] Verificando dono:`);
+  console.log(`[DEBUG] Sender original: ${sender}`);
+  console.log(`[DEBUG] Sender número limpo: ${senderNumber}`);
+  console.log(`[DEBUG] Dono número: ${ownerNumber}`);
+  console.log(`[DEBUG] Bot número: ${botNumber}`);
+  console.log(`[DEBUG] Na lista de JIDs? ${isInList}`);
+  console.log(`[DEBUG] Número match? ${isNumberMatch}`);
+  console.log(`[DEBUG] É dono? ${isInList || isNumberMatch}`);
+  
   return isInList || isNumberMatch;
 };
 
@@ -50,9 +72,6 @@ const isOwner = (sender) => {
 
 const DATA_DIR = path.join(__dirname, 'database');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const MEDIA_DIR = path.join(__dirname, 'media');
-if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
 const loadDB = (name) => {
   const file = path.join(DATA_DIR, `${name}.json`);
@@ -75,19 +94,20 @@ let schedules     = loadDB('schedules');
 let notes         = loadDB('notes');
 let birthdays     = loadDB('birthdays');
 let muted         = loadDB('muted');
-let cargos        = loadDB('cargos');
-let afkList       = loadDB('afkList');
-let autoMessages  = loadDB('autoMessages');
-let rules         = loadDB('rules');
-let customCmds    = loadDB('customCmds');
-let privateConfig = loadDB('privateConfig');
-let botLogs       = loadDB('botLogs');
-let groupHistory  = loadDB('groupHistory');
-let shop          = loadDB('shop'); // Lojinha: { groupId: { productId: { name, price, description, images: [], seller, createdAt } } }
+let cargos        = loadDB('cargos');       // { groupId: { userId: 'admin'|'mod'|'aux' } }
+let afkList       = loadDB('afkList');      // { userId: { msg, time } }
+let autoMessages  = loadDB('autoMessages'); // mensagens automáticas agendadas
+let rules         = loadDB('rules');        // { groupId: 'texto das regras' }
+let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, image, creator } } }
+let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
+let botLogs       = loadDB('botLogs');       // { errors: [], actions: [] }
+let groupHistory  = loadDB('groupHistory');  // { groupId: { hadTrial, hadPaid, ownerNumbers: [] } }
 
+// Inicializar logs se necessário
 if (!botLogs.errors) botLogs.errors = [];
 if (!botLogs.actions) botLogs.actions = [];
 
+// Função para registrar erros do bot
 const logBotError = (context, error) => {
   botLogs.errors.push({
     time: Date.now(),
@@ -95,12 +115,19 @@ const logBotError = (context, error) => {
     error: error?.message || String(error),
     stack: error?.stack?.split('\n').slice(0, 3).join(' | ') || ''
   });
+  // Manter apenas os últimos 100 erros
   if (botLogs.errors.length > 100) botLogs.errors = botLogs.errors.slice(-100);
   saveDB('botLogs', botLogs);
 };
 
+// Função para registrar ações do bot
 const logBotAction = (action, details) => {
-  botLogs.actions.push({ time: Date.now(), action, details });
+  botLogs.actions.push({
+    time: Date.now(),
+    action,
+    details
+  });
+  // Manter apenas as últimas 200 ações
   if (botLogs.actions.length > 200) botLogs.actions = botLogs.actions.slice(-200);
   saveDB('botLogs', botLogs);
 };
@@ -109,6 +136,7 @@ const logBotAction = (action, details) => {
 // HISTÓRICO DE GRUPOS (anti-burla de trial)
 // ============================================================
 
+// Registra que um grupo teve trial ou assinatura paga, e qual número era do criador/participante
 const markGroupHistory = (groupId, type, senderNumber) => {
   if (!groupHistory[groupId]) {
     groupHistory[groupId] = { hadTrial: false, hadPaid: false, ownerNumbers: [] };
@@ -121,9 +149,11 @@ const markGroupHistory = (groupId, type, senderNumber) => {
   saveDB('groupHistory', groupHistory);
 };
 
+// Verifica se um grupo ou número já usou trial/assinatura antes
 const groupOrNumberHasHistory = (groupId, senderNumber) => {
   const hist = groupHistory[groupId];
   if (hist && (hist.hadTrial || hist.hadPaid)) return true;
+  // Verificar se o número já apareceu em outro grupo com histórico
   if (senderNumber) {
     for (const [, h] of Object.entries(groupHistory)) {
       if (h.ownerNumbers && h.ownerNumbers.includes(senderNumber)) return true;
@@ -163,6 +193,7 @@ const getGroupSettings = (groupId) => {
       welcomeMsg: '',
       leaveMsg: '',
       antiSpam: false,
+      autoBaixar: false,
       simih: false,
       antiPalavra: false,
       palavroes: [],
@@ -180,7 +211,6 @@ const getGroupSettings = (groupId) => {
       closeAt: null,
       warningLimit: 3,
       antiViewOnce: false,
-      shopEnabled: true,
     };
     saveDB('groupSettings', groupSettings);
   }
@@ -189,6 +219,7 @@ const getGroupSettings = (groupId) => {
 
 const saveSettings = () => saveDB('groupSettings', groupSettings);
 
+// ========== FUNÇÃO CHECKSUBSCRIPTION CORRIGIDA ==========
 const checkSubscription = (groupId) => {
   const sub = subscriptions[groupId];
   if (!sub) return { active: false, reason: 'Sem assinatura. Entre em contato: wa.me/' + OWNER_NUMBER };
@@ -223,6 +254,7 @@ const getQuoted = (message) =>
 const getQuotedSender = (message) =>
   message.message?.extendedTextMessage?.contextInfo?.participant || null;
 
+// Download de mídia via Baileys
 const downloadMedia = async (msgContent, type) => {
   try {
     const stream = await downloadContentFromMessage(msgContent, type);
@@ -230,15 +262,6 @@ const downloadMedia = async (msgContent, type) => {
     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
     return buffer;
   } catch { return null; }
-};
-
-// Função para substituir variáveis no texto
-const replaceVars = (text, vars) => {
-  let result = text;
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replace(new RegExp(`@${key}|\\{${key}\\}`, 'gi'), value);
-  }
-  return result;
 };
 
 // ============================================================
@@ -251,14 +274,16 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   const replyImg = (buffer, caption) => sock.sendMessage(groupId, { image: buffer, caption }, { quoted: message });
   const adminCheck = isGroup ? await isAdmin(sock, groupId, sender) : false;
   const ownerCheck = isOwner(sender);
-  const cargoCheck = (gId, ...c) => ownerCheck || adminCheck || hasCargo(gId, sender, ...c);
+  const cargoCheck = (groupId, ...c) => ownerCheck || adminCheck || hasCargo(groupId, sender, ...c);
 
+  // Log do comando para debug
   console.log(`[COMANDO] ${command} de ${sender} - Dono: ${ownerCheck}`);
 
+  // Verificar assinatura (pular comandos de assinatura e info)
   const skipSubCheck = [
     '#ativar', '#status', '#cancelar', '#trial',
     '#ping', '#info', '#dono', '#menu', '#sender', '#horario', '#feedback',
-    '#dicatech', '#vercomandos', '#listacmd', '#loja', '#produtos'
+    '#dicatech', '#vercomandos', '#listacmd'
   ].includes(command) || ownerCheck;
 
   if (isGroup && !skipSubCheck) {
@@ -271,51 +296,62 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
   const settings = isGroup ? getGroupSettings(groupId) : {};
 
   // ===========================================================
-  // ASSINATURA (dono)
-  // ===========================================================
+// ASSINATURA (dono) - VERSÃO CORRIGIDA COM # E !
+// ===========================================================
 
-  if (command === '#ativar') {
-    if (!ownerCheck) return reply('❌ Sem permissao.');
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const days = parseInt(args[0]);
-    if (![7, 15, 30, 60, 90].includes(days)) return reply('❌ Use: #ativar [7|15|30|60|90] dias');
-    const expiresAt = Date.now() + days * 86400000;
-    subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
+if (command === '#ativar') {
+  console.log(`[ATIVAR] Executando comando de ativação`);
+  
+  if (!ownerCheck) {
+    console.log(`[ATIVAR] NEGADO - Não é o dono`);
+    return reply('❌ Sem permissao.');
+  }
+  
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  
+  const days = parseInt(args[0]);
+  if (![7, 15, 30, 60, 90].includes(days)) return reply('❌ Use: !ativar [7|15|30|60|90] dias');
+  
+  const expiresAt = Date.now() + days * 86400000;
+  subscriptions[groupId] = { type: 'paid', activatedAt: Date.now(), expiresAt, days };
+  saveDB('subscriptions', subscriptions);
+  markGroupHistory(groupId, 'paid', sender.split('@')[0]);
+  
+  console.log(`[ATIVAR] Assinatura ativada para ${groupId} até ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+  
+  return reply(`✅ Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
+}
+
+if (command === '#trial') {
+  if (!ownerCheck) return reply('❌ Sem permissao.');
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  const mins = parseInt(args[0]) || 10;
+  subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
+  saveDB('subscriptions', subscriptions);
+  markGroupHistory(groupId, 'trial', sender.split('@')[0]);
+  return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
+}
+
+if (command === '#cancelar') {
+  if (!ownerCheck) return reply('❌ Sem permissao.');
+  if (subscriptions[groupId]) {
+    markGroupHistory(groupId, subscriptions[groupId].type || 'paid', sender.split('@')[0]);
+    delete subscriptions[groupId];
     saveDB('subscriptions', subscriptions);
-    markGroupHistory(groupId, 'paid', sender.split('@')[0]);
-    return reply(`✅ Assinatura ativada por ${days} dias!\nExpira em: ${new Date(expiresAt).toLocaleString('pt-BR')}`);
   }
+  return reply('✅ Assinatura cancelada.');
+}
 
-  if (command === '#trial') {
-    if (!ownerCheck) return reply('❌ Sem permissao.');
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const mins = parseInt(args[0]) || 10;
-    subscriptions[groupId] = { type: 'trial', activatedAt: Date.now(), expiresAt: Date.now() + mins * 60000 };
-    saveDB('subscriptions', subscriptions);
-    markGroupHistory(groupId, 'trial', sender.split('@')[0]);
-    return reply(`✅ Teste de ${mins} minuto(s) ativado!`);
-  }
-
-  if (command === '#cancelar') {
-    if (!ownerCheck) return reply('❌ Sem permissao.');
-    if (subscriptions[groupId]) {
-      markGroupHistory(groupId, subscriptions[groupId].type || 'paid', sender.split('@')[0]);
-      delete subscriptions[groupId];
-      saveDB('subscriptions', subscriptions);
-    }
-    return reply('✅ Assinatura cancelada.');
-  }
-
-  if (command === '#status') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const sub = checkSubscription(groupId);
-    if (!sub.active) return reply(`📊 Status: ${sub.reason}`);
-    const left = sub.expiresAt - Date.now();
-    return reply(`📊 *Status da Assinatura*\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
-  }
+if (command === '#status') {
+  if (!isGroup) return reply('❌ Use em um grupo.');
+  const sub = checkSubscription(groupId);
+  if (!sub.active) return reply(`📊 Status: ${sub.reason}`);
+  const left = sub.expiresAt - Date.now();
+  return reply(`📊 *Status da Assinatura*\n\nTipo: ${sub.type === 'trial' ? 'Teste' : 'Pago'}\nRestante: ${formatTime(left)}\nExpira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}`);
+}
 
   // ===========================================================
-  // MENU PRINCIPAL
+  // MENU PRINCIPAL - VERSÃO BONITA
   // ===========================================================
 
   if (command === '#menu') {
@@ -326,7 +362,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (!sub) {
       const menuPrincipal = `
 ╔══════════════════╗
-     🤖 *MENU PRINCIPAL* 🤖
+     🤖 MENU PRINCIPAL 🤖
 ╚══════════════════╝
 
 👤 *USUÁRIO*
@@ -337,22 +373,22 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 
 📌 *MENUS DISPONÍVEIS*
 ➤ #menu figurinhas
+➤ #menu download
 ➤ #menu admin
 ➤ #menu diversão
 ➤ #menu grupo
 ➤ #menu info
-➤ #menu loja
+➤ #menu gold
 ➤ #menu tecnologia
 ➤ #menu comandos
-➤ #menu utilidades
 
 ⚡ *COMANDOS RÁPIDOS*
 ➤ #ping
 ➤ #dono
-➤ #status
+➤ !status
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `;
       return reply(menuPrincipal);
@@ -364,27 +400,60 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'figurinhas' || sub === 'fig') {
       return reply(`
 ╔══════════════════╗
-     📦 *MENU FIGURINHAS* 📦
+     📦 MENU FIGURINHAS 📦
 ╚══════════════════╝
 
 🖼️ *CRIAR FIGURINHA*
-➤ #sticker — Criar figurinha
-➤ #fig — Criar figurinha
-➤ #s — Atalho rápido
+➤ #sticker
+➤ #fig
+➤ #s
 
 📝 *TEXTO PARA FIGURINHA*
 ➤ #ttp [texto]
 ➤ #attp [texto]
 
 🔄 *CONVERSORES*
-➤ #toimg — Sticker para imagem
-➤ #togif — Sticker para GIF
+➤ #toimg
+➤ #togif
 
 ✏️ *EDIÇÃO*
 ➤ #take [autor] [pack]
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU DOWNLOAD
+    // ===========================================================
+    if (sub === 'download') {
+      return reply(`
+╔══════════════════╗
+     📥 MENU DOWNLOAD 📥
+╚══════════════════╝
+
+▶️ *YOUTUBE*
+➤ #play [nome/url]
+➤ #playvideo [nome]
+➤ #ytsearch [busca]
+
+📱 *TIKTOK*
+➤ #tiktok [url]
+
+📸 *INSTAGRAM*
+➤ #instagram [url]
+
+🎵 *MÚSICAS*
+➤ #letra [música]
+➤ #spotify [nome]
+
+🖼️ *IMAGENS*
+➤ #pinterest [busca]
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -394,29 +463,39 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     // ===========================================================
     if (sub === 'admin' || sub === 'adm') {
       if (!cargoCheck(groupId, 'admin', 'mod')) {
-        return reply(`❌ Apenas administradores podem ver este menu.`);
+        return reply(`
+╔══════════════════╗
+     ⚠️ ACESSO NEGADO ⚠️
+╚══════════════════╝
+
+❌ Apenas administradores
+   podem ver este menu.
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+        `);
       }
 
       return reply(`
 ╔══════════════════╗
-     🛡️ *MENU ADMIN* 🛡️
+     🤖 MENU ADMIN 🤖
 ╚══════════════════╝
 
 👥 *GERENCIAR MEMBROS*
-➤ #ban @user — Banir membro
-➤ #add 559999999999 — Adicionar
-➤ #promover @user — Promover admin
-➤ #rebaixar @user — Rebaixar admin
+➤ #ban @user
+➤ #add 559999999999
+➤ #promover @user
+➤ #rebaixar @user
 ➤ #cargo @user [admin|mod|aux]
-➤ #mute @user — Mutar membro
-➤ #desmute @user — Desmutar
+➤ #mute @user
+➤ #desmute @user
 
 ⚠️ *ADVERTÊNCIAS*
 ➤ #advertir @user [motivo]
 ➤ #checkwarnings @user
 ➤ #removewarnings @user
 ➤ #setlimitec [num]
-➤ #advertidos — Lista advertidos
 
 📢 *MARCAÇÃO*
 ➤ #marcar [texto]
@@ -425,6 +504,11 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ⚙️ *CONFIGURAÇÕES*
 ➤ #bemvindo [on/off]
 ➤ #bemvindo_msg [texto]
+➤ #bemvindo_cor [hex]
+➤ #bemvindo_acento [hex]
+➤ #bemvindo_bg (+ imagem)
+➤ #bemvindo_preview
+➤ #bemvindo_reset
 ➤ #antilink [on/off]
 ➤ #antivendas [on/off]
 ➤ #so_adm [on/off]
@@ -432,9 +516,9 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #x9visuunica [on/off]
 
 🔒 *CONTROLE DO GRUPO*
-➤ #fechargp — Fechar grupo
-➤ #abrirgp — Abrir grupo
-➤ #banghost — Remover inativos
+➤ #fechargp
+➤ #abrirgp
+➤ #banghost
 ➤ #inativos [dias]
 
 📝 *GRUPO*
@@ -443,19 +527,24 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #linkgp
 ➤ #regras [texto]
 
+🎵 *DOWNLOADS*
+➤ #mp3 [link] — Áudio (YouTube, TikTok...)
+➤ #mp4 [link] [qualidade] — Vídeo (240/360/480/720p)
+➤ #tiktok [link] — TikTok sem marca d'água
+➤ #ytinfo [link] — Info sem baixar
+
 🚫 *LISTA NEGRA*
 ➤ #listanegra add [num]
 ➤ #listanegra rem [num]
 ➤ #listanegra ver
 
-⏰ *MENSAGENS AGENDADAS*
-➤ #agendar [tempo] [texto]
-  Exemplos:
-  #agendar 30m Lembrete!
-  #agendar 2h Bom dia!
-  #agendar 08:00 Mensagem fixa
-➤ #veragendamentos
-➤ #cancelaragendamento [id]
+🎯 *UTILIDADES*
+➤ #sorteio [texto]
+
+⏰ *MENSAGENS AUTOMÁTICAS*
+➤ #mensagem-automatica [HH:MM] [texto]
+➤ #listar-mensagens-automaticas
+➤ #limpar-mensagens-automaticas
 
 🗒️ *NOTAS*
 ➤ #anotar [texto]
@@ -468,54 +557,12 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #delpalavra [palavra]
 ➤ #listapalavrao
 
-🛒 *LOJA*
-➤ #loja [on/off]
-➤ #produtos — Ver produtos
+💤 *STATUS*
+➤ #ausente [texto]
+➤ #ativo
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU LOJA
-    // ===========================================================
-    if (sub === 'loja' || sub === 'shop') {
-      return reply(`
-╔══════════════════╗
-     🛒 *MENU LOJA* 🛒
-╚══════════════════╝
-
-📦 *ANUNCIAR PRODUTOS*
-➤ #anunciar
-  (Envie com imagem + texto)
-  Formato do texto:
-  Nome: Produto X
-  Preço: R$ 100,00
-  Descrição: Texto aqui
-
-➤ #anunciar [nome] | [preço] | [desc]
-  (Sem imagem)
-
-📋 *GERENCIAR*
-➤ #produtos — Ver todos produtos
-➤ #produto [id] — Ver detalhes
-➤ #meusprodutos — Seus anúncios
-➤ #deletarproduto [id]
-
-🔔 *CONFIGURAÇÃO (Admin)*
-➤ #loja on — Ativar loja
-➤ #loja off — Desativar loja
-
-💡 *DICAS*
-• Envie uma imagem com a legenda
-  começando com #anunciar
-• Use | para separar campos
-• Anúncios aparecem com selo especial
-
-╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -526,7 +573,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'diversão' || sub === 'div') {
       return reply(`
 ╔══════════════════╗
-     🎮 *MENU DIVERSÃO* 🎮
+     🎮 MENU DIVERSÃO 🎮
 ╚══════════════════╝
 
 🎯 *JOGOS*
@@ -535,7 +582,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #8ball [pergunta]
 
 💘 *RELACIONAMENTOS*
-➤ #casal — Sortear casal
+➤ #casal
 ➤ #ship @user @user
 
 🏆 *RANKINGS*
@@ -548,10 +595,9 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #chance [texto]
 ➤ #fakemsg @user [texto]
 ➤ #bot
-➤ #sorteio [texto]
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -562,14 +608,14 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'grupo' || sub === 'gp') {
       return reply(`
 ╔══════════════════╗
-     👥 *MENU GRUPO* 👥
+     👥 MENU GRUPO 👥
 ╚══════════════════╝
 
 📊 *ESTATÍSTICAS*
-➤ #rankativos — Mais ativos
+➤ #rankativos
 ➤ #inativos [dias]
-➤ #gpinfo — Info do grupo
-➤ #admins — Lista admins
+➤ #gpinfo
+➤ #admins
 
 📋 *INFORMAÇÕES*
 ➤ #regras
@@ -585,7 +631,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #listarafk
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -596,7 +642,7 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'info' || sub === 'informações') {
       return reply(`
 ╔══════════════════╗
-     ℹ️ *MENU INFO* ℹ️
+     ℹ️ MENU INFO ℹ️
 ╚══════════════════╝
 
 🤖 *SOBRE O BOT*
@@ -608,47 +654,54 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #perfil [@user]
 ➤ #sender
 
+📝 *UTILIDADES*
+➤ #imc [peso] [altura]
+➤ #calculadora [expressão]
+➤ #cep [CEP]
+➤ #signo [DD/MM]
+➤ #clima [cidade]
+➤ #horario
+➤ #traduzir [idioma] [texto]
+
 💰 *ASSINATURA*
-➤ #status
-➤ #ativar [dias]
-➤ #cancelar
+➤ !status
+➤ !ativar [dias]
+➤ !cancelar
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
 
     // ===========================================================
-    // MENU UTILIDADES
+    // MENU GOLD
     // ===========================================================
-    if (sub === 'utilidades' || sub === 'util') {
+    if (sub === 'gold' || sub === 'moedas') {
       return reply(`
 ╔══════════════════╗
-     🔧 *MENU UTILIDADES* 🔧
+     💰 MENU GOLD 💰
 ╚══════════════════╝
 
-📝 *CÁLCULOS*
-➤ #imc [peso] [altura]
-➤ #calculadora [expressão]
+💰 *CONSULTAS*
+➤ #gold
+➤ #rankgold
 
-🌐 *CONSULTAS*
-➤ #cep [CEP]
-➤ #clima [cidade]
-➤ #horario
-➤ #signo [DD/MM]
+🎁 *RECOMPENSAS*
+➤ #daily
+➤ #minerar_gold
 
-🌍 *TRADUÇÃO*
-➤ #traduzir [idioma] [texto]
-  Idiomas: en, es, fr, de, pt
+🤝 *TRANSAÇÕES*
+➤ #doargold @user [qtd]
+➤ #roubargold @user
 
-🔐 *SEGURANÇA*
-➤ #siteseguro [url]
-➤ #senhasegura [senha]
-➤ #gerarsenha [tamanho]
+🎲 *APOSTAS*
+➤ #apostar [qtd]
+➤ #cassino [qtd]
+➤ #doublegold [qtd]
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -659,14 +712,26 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'tecnologia' || sub === 'tech') {
       return reply(`
 ╔══════════════════╗
-     🖥️ *MENU TECNOLOGIA* 🖥️
+     🖥️ MENU TECNOLOGIA 🖥️
 ╚══════════════════╝
 
 🌐 *INTERNET*
 ➤ #testarnet
-➤ #meuip
+➤ #velocidade
 ➤ #meudns
+➤ #meuip
+
+🔒 *SEGURANÇA*
+➤ #siteseguro [url]
+➤ #verificarlink [url]
+➤ #senhasegura [senha]
+➤ #gerarsenha [tamanho]
+
+📡 *REDES & MODEM*
+➤ #resetarmodem
+➤ #melhorarsinal
 ➤ #pingtest [host]
+➤ #portacheck [porta]
 
 📱 *DISPOSITIVOS*
 ➤ #limparcache
@@ -674,14 +739,16 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
 ➤ #liberarmemoria
 ➤ #modoaviao
 
-🛠️ *DICAS*
-➤ #dicatech — Dica aleatória
+🛠️ *DICAS GERAIS*
+➤ #dicatech
 ➤ #atalhos [windows/mac/android]
-➤ #resetarmodem
-➤ #melhorarsinal
+➤ #formatarpc
+➤ #atualizardriver
+➤ #vpn
+➤ #whoisdominio [domínio]
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
@@ -692,518 +759,105 @@ const handleCommand = async (sock, message, groupId, sender, command, args, isGr
     if (sub === 'comandos' || sub === 'cmd') {
       return reply(`
 ╔══════════════════╗
-     📝 *COMANDOS PERSONALIZADOS* 📝
+     📝 COMANDOS PERSONALIZADOS 📝
 ╚══════════════════╝
 
 📌 *CRIAR COMANDO*
-➤ #comando [nome] [texto]
-  (Pode enviar com imagem!)
+➤ !comando [nome] [texto]
+   (pode enviar com imagem!)
 
 📋 *GERENCIAR*
 ➤ #vercomandos
 ➤ #delcomando [nome]
 
 💡 *COMO USAR*
-1. Envie uma imagem com legenda:
-   #comando saudacao Olá!
-2. Ou apenas texto:
-   #comando regra1 Não faça spam
+1. Envie uma imagem com a legenda:
+   !comando saudacao Olá pessoal!
+2. Ou sem imagem:
+   !comando regra1 Não faça spam
+3. Para executar o comando:
+   !saudacao  ou  !regra1
 
 ⚠️ O texto fica EXATAMENTE como
    você digitou (com formatação).
 
 ╔══════════════════╗
-      ⚡ *SignaBOT* ⚡
+      ⚡ SignaBOT ⚡
 ╚══════════════════╝
       `);
     }
 
-    return reply(`❌ Submenu não encontrado.\nUse #menu para ver os disponíveis.`);
+    // ===========================================================
+    // SUBMENU NÃO ENCONTRADO
+    // ===========================================================
+    return reply(`
+╔══════════════════╗
+     ❌ SUBMENU INVÁLIDO ❌
+╚══════════════════╝
+
+Use #menu para ver
+os menus disponíveis:
+
+📌 #menu figurinhas
+📌 #menu download
+📌 #menu admin
+📌 #menu diversão
+📌 #menu grupo
+📌 #menu info
+📌 #menu gold
+📌 #menu tecnologia
+📌 #menu comandos
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+    `);
   }
 
   // ===========================================================
-  // SISTEMA DE LOJINHA
+  // FIGURINHAS - VERSÃO CORRIGIDA PARA CELULAR
   // ===========================================================
 
-  if (command === '#loja') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    if (args[0] === 'on') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-      settings.shopEnabled = true;
-      saveSettings();
-      return reply('✅ Loja ativada! Membros podem anunciar com #anunciar');
-    }
-    
-    if (args[0] === 'off') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-      settings.shopEnabled = false;
-      saveSettings();
-      return reply('✅ Loja desativada.');
-    }
-    
-    return reply(`🛒 *Loja:* ${settings.shopEnabled !== false ? 'Ativada' : 'Desativada'}\n\nUse #menu loja para ver comandos.`);
-  }
-
-  if (command === '#anunciar') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    if (settings.shopEnabled === false) return reply('❌ A loja está desativada neste grupo.');
-    
-    const imageMsg = message.message?.imageMessage;
-    let productName = '';
-    let productPrice = '';
-    let productDesc = '';
-    let imageBuffer = null;
-    let imagePath = null;
-    
-    // Se enviou com imagem
-    if (imageMsg) {
-      const caption = imageMsg.caption || '';
-      const captionText = caption.replace(/^#anunciar\s*/i, '').trim();
-      
-      // Tentar extrair campos do caption
-      const nameMatch = captionText.match(/nome:\s*(.+?)(?:\n|preço:|preco:|$)/i);
-      const priceMatch = captionText.match(/pre[çc]o:\s*(.+?)(?:\n|descri[çc][aã]o:|desc:|$)/i);
-      const descMatch = captionText.match(/(?:descri[çc][aã]o|desc):\s*(.+)/is);
-      
-      if (nameMatch) productName = nameMatch[1].trim();
-      if (priceMatch) productPrice = priceMatch[1].trim();
-      if (descMatch) productDesc = descMatch[1].trim();
-      
-      // Se não encontrou formato estruturado, usa o texto todo como descrição
-      if (!productName && !productPrice && captionText) {
-        const parts = captionText.split('|').map(p => p.trim());
-        if (parts.length >= 2) {
-          productName = parts[0];
-          productPrice = parts[1];
-          productDesc = parts[2] || '';
-        } else {
-          productDesc = captionText;
-        }
-      }
-      
-      // Baixar imagem
-      try {
-        imageBuffer = await downloadMedia(imageMsg, 'image');
-        if (imageBuffer) {
-          const imgId = Date.now().toString(36);
-          imagePath = path.join(MEDIA_DIR, `product_${groupId.split('@')[0]}_${imgId}.jpg`);
-          fs.writeFileSync(imagePath, imageBuffer);
-        }
-      } catch (e) {
-        console.log('Erro ao baixar imagem do produto:', e.message);
-      }
-    } else {
-      // Sem imagem, texto puro
-      const text = args.join(' ');
-      const parts = text.split('|').map(p => p.trim());
-      if (parts.length >= 2) {
-        productName = parts[0];
-        productPrice = parts[1];
-        productDesc = parts[2] || '';
-      } else {
-        return reply(`❌ Formato inválido!\n\nUse:\n#anunciar Nome | Preço | Descrição\n\nOu envie uma imagem com:\nNome: Produto\nPreço: R$ 100\nDescrição: Texto`);
-      }
-    }
-    
-    if (!productName && !productDesc) {
-      return reply(`❌ Informe pelo menos o nome ou descrição do produto.\n\nExemplo:\n#anunciar Camiseta | R$ 50 | Tamanho M`);
-    }
-    
-    // Gerar ID do produto
-    const productId = 'PRD_' + Date.now().toString(36).toUpperCase();
-    
-    // Salvar no banco
-    if (!shop[groupId]) shop[groupId] = {};
-    shop[groupId][productId] = {
-      name: productName || 'Sem nome',
-      price: productPrice || 'Sob consulta',
-      description: productDesc,
-      imagePath: imagePath,
-      seller: sender,
-      sellerName: senderName,
-      createdAt: Date.now()
-    };
-    saveDB('shop', shop);
-    
-    // Criar anúncio bonito
-    const anuncio = `
-╔══════════════════════════╗
-   🏷️ *ANÚNCIO ESPECIAL* 🏷️
-╚══════════════════════════╝
-
-🛍️ *${productName || 'Produto'}*
-
-💰 *Preço:* ${productPrice || 'Sob consulta'}
-
-📝 *Descrição:*
-${productDesc || 'Sem descrição'}
-
-👤 *Vendedor:* @${sender.split('@')[0]}
-🆔 *ID:* ${productId}
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-💬 Interessado? Chame o vendedor!
-━━━━━━━━━━━━━━━━━━━━━━━━
-
-╔══════════════════════════╗
-      🛒 *LOJA SignaBOT* 🛒
-╚══════════════════════════╝
-    `;
-    
-    // Enviar anúncio
-    if (imageBuffer) {
-      await sock.sendMessage(groupId, {
-        image: imageBuffer,
-        caption: anuncio,
-        mentions: [sender]
-      });
-    } else {
-      await sock.sendMessage(groupId, {
-        text: anuncio,
-        mentions: [sender]
-      });
-    }
-    
-    logBotAction('new_product', `${productId} por ${sender.split('@')[0]} em ${groupId}`);
-    return;
-  }
-
-  if (command === '#produtos') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    const products = shop[groupId];
-    if (!products || !Object.keys(products).length) {
-      return reply('📦 Nenhum produto anunciado neste grupo.\n\nUse #anunciar para criar um anúncio!');
-    }
-    
-    let text = `
-╔══════════════════════════╗
-   🛒 *PRODUTOS DO GRUPO* 🛒
-╚══════════════════════════╝
-
-`;
-    const mentions = [];
-    
-    Object.entries(products).slice(0, 10).forEach(([id, p], i) => {
-      const shortName = p.name.length > 25 ? p.name.substring(0, 25) + '...' : p.name;
-      text += `*${i + 1}.* ${shortName}\n`;
-      text += `   💰 ${p.price}\n`;
-      text += `   👤 @${p.seller.split('@')[0]}\n`;
-      text += `   🆔 ${id}\n\n`;
-      if (!mentions.includes(p.seller)) mentions.push(p.seller);
-    });
-    
-    text += `\nUse #produto [ID] para ver detalhes.`;
-    
-    return sock.sendMessage(groupId, { text, mentions });
-  }
-
-  if (command === '#produto') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    const productId = args[0]?.toUpperCase();
-    if (!productId) return reply('❌ Use: #produto [ID]\nEx: #produto PRD_ABC123');
-    
-    const product = shop[groupId]?.[productId];
-    if (!product) return reply('❌ Produto não encontrado.');
-    
-    const text = `
-╔══════════════════════════╗
-   🏷️ *DETALHES DO PRODUTO* 🏷️
-╚══════════════════════════╝
-
-🛍️ *${product.name}*
-
-💰 *Preço:* ${product.price}
-
-📝 *Descrição:*
-${product.description || 'Sem descrição'}
-
-👤 *Vendedor:* @${product.seller.split('@')[0]}
-📅 *Anunciado:* ${new Date(product.createdAt).toLocaleDateString('pt-BR')}
-🆔 *ID:* ${productId}
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-💬 Chame o vendedor se interessou!
-━━━━━━━━━━━━━━━━━━━━━━━━
-    `;
-    
-    if (product.imagePath && fs.existsSync(product.imagePath)) {
-      const imgBuffer = fs.readFileSync(product.imagePath);
-      await sock.sendMessage(groupId, {
-        image: imgBuffer,
-        caption: text,
-        mentions: [product.seller]
-      });
-    } else {
-      await sock.sendMessage(groupId, {
-        text,
-        mentions: [product.seller]
-      });
-    }
-    return;
-  }
-
-  if (command === '#meusprodutos') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    const products = shop[groupId];
-    if (!products) return reply('📦 Nenhum produto no grupo.');
-    
-    const myProducts = Object.entries(products).filter(([, p]) => p.seller === sender);
-    if (!myProducts.length) return reply('📦 Você não tem produtos anunciados.');
-    
-    let text = `*Seus Produtos:*\n\n`;
-    myProducts.forEach(([id, p], i) => {
-      text += `${i + 1}. ${p.name} — ${p.price}\n   ID: ${id}\n\n`;
-    });
-    text += `\nUse #deletarproduto [ID] para remover.`;
-    
-    return reply(text);
-  }
-
-  if (command === '#deletarproduto') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    
-    const productId = args[0]?.toUpperCase();
-    if (!productId) return reply('❌ Use: #deletarproduto [ID]');
-    
-    const product = shop[groupId]?.[productId];
-    if (!product) return reply('❌ Produto não encontrado.');
-    
-    // Apenas dono do produto, admin ou dono do bot pode deletar
-    if (product.seller !== sender && !adminCheck && !ownerCheck) {
-      return reply('❌ Você só pode deletar seus próprios produtos.');
-    }
-    
-    // Remover imagem se existir
-    if (product.imagePath && fs.existsSync(product.imagePath)) {
-      try { fs.unlinkSync(product.imagePath); } catch {}
-    }
-    
-    delete shop[groupId][productId];
-    saveDB('shop', shop);
-    
-    return reply(`✅ Produto ${productId} removido!`);
-  }
-
-  // ===========================================================
-  // AGENDAMENTO DE MENSAGENS (MINUTOS, HORAS OU HORÁRIO FIXO)
-  // ===========================================================
-
-  if (command === '#agendar') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    if (args.length < 2) {
-      return reply(`❌ *Formato de uso:*
-
-*Por minutos:*
-#agendar 30m Mensagem aqui
-
-*Por horas:*
-#agendar 2h Mensagem aqui
-
-*Horário fixo (diário):*
-#agendar 08:00 Bom dia!
-
-*Com dias específicos:*
-#agendar 08:00 seg,qua,sex Bom dia!`);
-    }
-    
-    const timeArg = args[0].toLowerCase();
-    let scheduleType = '';
-    let executeAt = 0;
-    let repeatTime = null;
-    let repeatDays = 'todos';
-    let msgText = '';
-    
-    // Verificar se é minutos (30m, 45m, etc)
-    if (timeArg.endsWith('m') && /^\d+m$/.test(timeArg)) {
-      const minutes = parseInt(timeArg.replace('m', ''));
-      if (minutes < 1 || minutes > 1440) {
-        return reply('❌ Minutos deve ser entre 1 e 1440 (24 horas).');
-      }
-      scheduleType = 'once';
-      executeAt = Date.now() + (minutes * 60 * 1000);
-      msgText = args.slice(1).join(' ');
-    }
-    // Verificar se é horas (2h, 12h, etc)
-    else if (timeArg.endsWith('h') && /^\d+h$/.test(timeArg)) {
-      const hours = parseInt(timeArg.replace('h', ''));
-      if (hours < 1 || hours > 168) {
-        return reply('❌ Horas deve ser entre 1 e 168 (1 semana).');
-      }
-      scheduleType = 'once';
-      executeAt = Date.now() + (hours * 60 * 60 * 1000);
-      msgText = args.slice(1).join(' ');
-    }
-    // Verificar se é horário fixo (HH:MM)
-    else if (/^\d{2}:\d{2}$/.test(timeArg)) {
-      scheduleType = 'daily';
-      repeatTime = timeArg;
-      
-      // Verificar se tem dias específicos
-      const nextArg = args[1]?.toLowerCase();
-      const daysPattern = /^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*$/i;
-      
-      if (daysPattern.test(nextArg)) {
-        repeatDays = nextArg;
-        msgText = args.slice(2).join(' ');
-      } else {
-        msgText = args.slice(1).join(' ');
-      }
-    } else {
-      return reply(`❌ Formato inválido!
-
-Use:
-• 30m para 30 minutos
-• 2h para 2 horas
-• 08:00 para horário fixo`);
-    }
-    
-    if (!msgText.trim()) {
-      return reply('❌ Informe a mensagem a ser enviada.');
-    }
-    
-    // Gerar ID do agendamento
-    const schedId = 'SCH_' + Date.now().toString(36).toUpperCase();
-    
-    if (!autoMessages[groupId]) autoMessages[groupId] = {};
-    autoMessages[groupId][schedId] = {
-      type: scheduleType,
-      time: repeatTime,
-      executeAt: executeAt,
-      days: repeatDays,
-      text: msgText, // Preserva formatação original
-      active: true,
-      creator: sender,
-      createdAt: Date.now()
-    };
-    saveDB('autoMessages', autoMessages);
-    
-    let confirmMsg = `✅ *Mensagem Agendada!*\n\n🆔 ID: ${schedId}\n`;
-    
-    if (scheduleType === 'once') {
-      const execDate = new Date(executeAt);
-      confirmMsg += `⏰ Será enviada em: ${execDate.toLocaleString('pt-BR')}\n`;
-    } else {
-      confirmMsg += `⏰ Horário: ${repeatTime}\n`;
-      confirmMsg += `📅 Dias: ${repeatDays}\n`;
-    }
-    
-    confirmMsg += `\n📝 Mensagem:\n${msgText}`;
-    
-    logBotAction('schedule_msg', `${schedId} em ${groupId}`);
-    return reply(confirmMsg);
-  }
-
-  if (command === '#veragendamentos' || command === '#listar-mensagens-automaticas') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    const scheds = autoMessages[groupId];
-    if (!scheds || !Object.keys(scheds).length) {
-      return reply('📅 Nenhuma mensagem agendada.\n\nUse #agendar para criar.');
-    }
-    
-    let text = `*📅 Mensagens Agendadas:*\n\n`;
-    
-    Object.entries(scheds).forEach(([id, s], i) => {
-      const preview = s.text.length > 40 ? s.text.substring(0, 40) + '...' : s.text;
-      text += `*${i + 1}.* ${id}\n`;
-      
-      if (s.type === 'once') {
-        const execDate = new Date(s.executeAt);
-        if (s.executeAt > Date.now()) {
-          text += `   ⏰ Em: ${execDate.toLocaleString('pt-BR')}\n`;
-        } else {
-          text += `   ✅ Já enviada\n`;
-        }
-      } else {
-        text += `   ⏰ ${s.time} | Dias: ${s.days || 'todos'}\n`;
-      }
-      text += `   📝 ${preview}\n\n`;
-    });
-    
-    text += `\nUse #cancelaragendamento [ID] para remover.`;
-    
-    return reply(text);
-  }
-
-  if (command === '#cancelaragendamento' || command === '#delagenda' || command === '#limpar-mensagem-automatica') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    const schedId = args[0]?.toUpperCase();
-    if (!schedId) return reply('❌ Use: #cancelaragendamento [ID]');
-    
-    if (!autoMessages[groupId]?.[schedId]) {
-      return reply('❌ Agendamento não encontrado.');
-    }
-    
-    delete autoMessages[groupId][schedId];
-    saveDB('autoMessages', autoMessages);
-    
-    return reply(`✅ Agendamento ${schedId} cancelado!`);
-  }
-
-  if (command === '#limpar-mensagens-automaticas') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    const count = Object.keys(autoMessages[groupId] || {}).length;
-    autoMessages[groupId] = {};
-    saveDB('autoMessages', autoMessages);
-    
-    return reply(`✅ ${count} agendamento(s) removido(s)!`);
-  }
-
-  // ===========================================================
-  // FIGURINHAS
-  // ===========================================================
-
-  if (command === '#sticker' || command === '#s' || command === '#fig') {
-    const quoted = getQuoted(message);
-    const imageMsg = quoted?.imageMessage || message.message?.imageMessage;
-    const videoMsg = quoted?.videoMessage || message.message?.videoMessage;
+  if (command === '#sticker' || command === '#s') {
+    const quoted = getQuoted(message)
+    const imageMsg = quoted?.imageMessage || message.message?.imageMessage
+    const videoMsg = quoted?.videoMessage || message.message?.videoMessage
 
     if (!imageMsg && !videoMsg) {
-      return reply('❌ Marque uma imagem ou vídeo (máx 10s)');
+      return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
     }
 
-    await reply('⏳ Criando sua figurinha...');
+    await reply('⏳ Criando sua figurinha...')
 
     try {
       if (imageMsg) {
-        const buffer = await downloadMedia(imageMsg, 'image');
+        const buffer = await downloadMedia(imageMsg, 'image')
         const webpBuffer = await sharp(buffer)
           .resize(512, 512, {
             fit: 'contain',
             background: { r: 0, g: 0, b: 0, alpha: 0 }
           })
           .webp({ quality: 80 })
-          .toBuffer();
+          .toBuffer()
 
         await sock.sendMessage(groupId, {
           sticker: webpBuffer,
           packname: 'SignaBot',
           author: senderName
-        }, { quoted: message });
-        return;
+        }, { quoted: message })
+        return
       }
 
       if (videoMsg) {
         if (videoMsg.seconds > 10) {
-          return reply('❌ O vídeo deve ter no máximo 10 segundos.');
+          return reply('❌ O vídeo deve ter no máximo 10 segundos.')
         }
 
-        const videoBuffer = await downloadMedia(videoMsg, 'video');
-        const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
-        const outputPath = path.join(__dirname, `output_${Date.now()}.webp`);
+        const videoBuffer = await downloadMedia(videoMsg, 'video')
+        const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
+        const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
 
-        fs.writeFileSync(inputPath, videoBuffer);
+        fs.writeFileSync(inputPath, videoBuffer)
 
         await new Promise((resolve, reject) => {
           ffmpeg(inputPath)
@@ -1220,97 +874,691 @@ Use:
             .toFormat('webp')
             .save(outputPath)
             .on('end', resolve)
-            .on('error', reject);
-        });
+            .on('error', reject)
+        })
 
-        const webpBuffer = fs.readFileSync(outputPath);
+        const webpBuffer = fs.readFileSync(outputPath)
         await sock.sendMessage(groupId, {
           sticker: webpBuffer,
           packname: 'SignaBot',
           author: senderName
-        }, { quoted: message });
+        }, { quoted: message })
 
-        fs.unlinkSync(inputPath);
-        fs.unlinkSync(outputPath);
-        return;
+        fs.unlinkSync(inputPath)
+        fs.unlinkSync(outputPath)
+        return
       }
     } catch (err) {
-      console.log('Erro Sticker:', err);
-      return reply('❌ Erro ao criar figurinha.');
+      console.log('Erro Sticker:', err)
+      return reply('❌ Erro ao criar figurinha.')
     }
   }
 
-  if (command === '#toimg') {
-    const quoted = getQuoted(message);
-    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
+  // ===========================================================
+  // FIGURINHAS - TODOS OS COMANDOS
+  // ===========================================================
 
-    if (!stickerMsg) {
-      return reply('❌ Marque uma figurinha para converter em imagem!');
+  // #fig - Atalho para criar figurinha
+  if (command === '#fig') {
+    const quoted = getQuoted(message)
+    const imageMsg = quoted?.imageMessage || message.message?.imageMessage
+    const videoMsg = quoted?.videoMessage || message.message?.videoMessage
+
+    if (!imageMsg && !videoMsg) {
+      return reply('❌ Marque uma imagem ou vídeo (máx 10s)')
     }
 
-    await reply('⏳ Convertendo figurinha para imagem...');
+    await reply('⏳ Criando figurinha...')
 
     try {
-      const buffer = await downloadMedia(stickerMsg, 'sticker');
-      if (!buffer) return reply('❌ Erro ao baixar figurinha.');
+      if (imageMsg) {
+        const buffer = await downloadMedia(imageMsg, 'image')
+        const webpBuffer = await sharp(buffer)
+          .resize(512, 512, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .webp({ quality: 80 })
+          .toBuffer()
 
-      const pngBuffer = await sharp(buffer).png().toBuffer();
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+        return
+      }
+
+      if (videoMsg) {
+        if (videoMsg.seconds > 10) {
+          return reply('❌ O vídeo deve ter no máximo 10 segundos.')
+        }
+
+        const videoBuffer = await downloadMedia(videoMsg, 'video')
+        const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`)
+        const outputPath = path.join(__dirname, `output_${Date.now()}.webp`)
+
+        fs.writeFileSync(inputPath, videoBuffer)
+
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions([
+              '-vcodec libwebp',
+              '-vf scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+              '-loop 0',
+              '-ss 00:00:00',
+              '-t 10',
+              '-preset default',
+              '-an',
+              '-vsync 0'
+            ])
+            .toFormat('webp')
+            .save(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+        })
+
+        const webpBuffer = fs.readFileSync(outputPath)
+        await sock.sendMessage(groupId, {
+          sticker: webpBuffer,
+          packname: 'SignaBot',
+          author: senderName
+        }, { quoted: message })
+
+        fs.unlinkSync(inputPath)
+        fs.unlinkSync(outputPath)
+        return
+      }
+    } catch (err) {
+      console.log('Erro #fig:', err)
+      return reply('❌ Erro ao criar figurinha.')
+    }
+  }
+
+  // #ttp - Texto para figurinha
+  if (command === '#ttp') {
+    if (args.length === 0) return reply('❌ Use: #ttp [texto]\nExemplo: #ttp Olá Mundo')
+    
+    const text = args.join(' ')
+    await reply('⏳ Criando figurinha de texto...')
+
+    try {
+      // Tentar várias APIs
+      const apis = [
+        `https://api.xteam.xyz/ttp?text=${encodeURIComponent(text)}`,
+        `https://api.lolhuman.xyz/api/ttp?apikey=9b817532fadff8fc7cb86862&text=${encodeURIComponent(text)}`,
+        `https://api.ashiq.dev/api/ttp?text=${encodeURIComponent(text)}`
+      ]
+
+      for (const apiUrl of apis) {
+        try {
+          const response = await axios.get(apiUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000
+          })
+
+          if (response.data && response.data.length > 100) {
+            await sock.sendMessage(groupId, {
+              sticker: Buffer.from(response.data)
+            }, { quoted: message })
+            return
+          }
+        } catch (e) {
+          console.log(`API TTP falhou: ${apiUrl}`, e.message)
+          continue
+        }
+      }
+
+      return reply('❌ Erro ao criar figurinha de texto. Tente novamente.')
+
+    } catch (err) {
+      console.log('Erro #ttp:', err)
+      return reply('❌ Erro ao criar figurinha de texto.')
+    }
+  }
+
+  // #attp - Texto animado para figurinha
+  if (command === '#attp') {
+    if (args.length === 0) return reply('❌ Use: #attp [texto]\nExemplo: #attp Olá Mundo')
+    
+    const text = args.join(' ')
+    await reply('⏳ Criando figurinha animada...')
+
+    try {
+      const response = await axios.get(
+        `https://api.xteam.xyz/attp?text=${encodeURIComponent(text)}`,
+        { responseType: 'arraybuffer', timeout: 15000 }
+      )
+
+      await sock.sendMessage(groupId, {
+        sticker: Buffer.from(response.data)
+      }, { quoted: message })
+
+    } catch (err) {
+      console.log('Erro #attp:', err)
+      return reply('❌ Erro ao criar figurinha animada. Tente novamente.')
+    }
+  }
+
+  // #toimg - Converter figurinha para imagem
+  if (command === '#toimg') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
+
+    if (!stickerMsg) {
+      return reply('❌ Marque uma figurinha para converter em imagem!')
+    }
+
+    await reply('⏳ Convertendo figurinha para imagem...')
+
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
+
+      // Converter WebP para PNG usando sharp
+      const pngBuffer = await sharp(buffer)
+        .png()
+        .toBuffer()
 
       await sock.sendMessage(groupId, {
         image: pngBuffer,
         caption: '✅ Imagem convertida com sucesso!'
-      }, { quoted: message });
+      }, { quoted: message })
 
     } catch (err) {
-      console.log('Erro #toimg:', err);
-      return reply('❌ Erro ao converter figurinha.');
+      console.log('Erro #toimg:', err)
+      return reply('❌ Erro ao converter figurinha.')
     }
   }
 
-  if (command === '#take') {
-    const quoted = getQuoted(message);
-    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage;
+  // #togif - Converter figurinha animada para GIF
+  if (command === '#togif') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
 
     if (!stickerMsg) {
-      return reply('❌ Marque uma figurinha para editar!');
+      return reply('❌ Marque uma figurinha animada para converter em GIF!')
     }
 
-    const author = args[0] || 'SignaBot';
-    const pack = args[1] || 'Stickers';
-
-    await reply(`⏳ Alterando figurinha...\nAutor: ${author}\nPack: ${pack}`);
+    await reply('⏳ Convertendo figurinha para GIF...')
 
     try {
-      const buffer = await downloadMedia(stickerMsg, 'sticker');
-      if (!buffer) return reply('❌ Erro ao baixar figurinha.');
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
+
+      // Salvar WebP temporário
+      const inputPath = path.join(__dirname, `sticker_${Date.now()}.webp`)
+      const outputPath = path.join(__dirname, `gif_${Date.now()}.gif`)
+
+      fs.writeFileSync(inputPath, buffer)
+
+      // Converter WebP para GIF usando ffmpeg
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-vf fps=15',
+            '-loop 0'
+          ])
+          .toFormat('gif')
+          .save(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+      })
+
+      const gifBuffer = fs.readFileSync(outputPath)
+
+      await sock.sendMessage(groupId, {
+        video: gifBuffer,
+        gifPlayback: true,
+        caption: '✅ GIF convertido com sucesso!'
+      }, { quoted: message })
+
+      // Limpeza
+      fs.unlinkSync(inputPath)
+      fs.unlinkSync(outputPath)
+
+    } catch (err) {
+      console.log('Erro #togif:', err)
+      return reply('❌ Erro ao converter figurinha para GIF.')
+    }
+  }
+
+  // #take - Mudar autor/pack da figurinha
+  if (command === '#take') {
+    const quoted = getQuoted(message)
+    const stickerMsg = quoted?.stickerMessage || message.message?.stickerMessage
+
+    if (!stickerMsg) {
+      return reply('❌ Marque uma figurinha para editar!')
+    }
+
+    const author = args[0] || 'SignaBot'
+    const pack = args[1] || 'Stickers'
+
+    await reply(`⏳ Alterando figurinha...\nAutor: ${author}\nPack: ${pack}`)
+
+    try {
+      const buffer = await downloadMedia(stickerMsg, 'sticker')
+
+      if (!buffer) {
+        return reply('❌ Erro ao baixar figurinha.')
+      }
 
       await sock.sendMessage(groupId, {
         sticker: buffer,
         packname: pack,
         author: author
-      }, { quoted: message });
+      }, { quoted: message })
 
     } catch (err) {
-      console.log('Erro #take:', err);
-      return reply('❌ Erro ao editar figurinha.');
+      console.log('Erro #take:', err)
+      return reply('❌ Erro ao editar figurinha.')
     }
   }
 
   // ===========================================================
-  // ADMINISTRAÇÃO
+  // DOWNLOADS
+  // ===========================================================
+
+  if (command === '#play' || command === '#ytmp3') {
+    if (args.length === 0) return reply('Use: #play [nome ou URL da musica]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
+
+      // APIs de fallback para áudio
+      const ytAudioApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
+
+      let audioUrl = null;
+      for (const apiFn of ytAudioApis) {
+        try { audioUrl = await apiFn(); if (audioUrl) break; } catch {}
+      }
+      if (!audioUrl) return reply('Nao foi possivel obter o audio. Tente novamente mais tarde.');
+
+      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(audioResp.data);
+
+      await sock.sendMessage(groupId, {
+        audio: buffer,
+        mimetype: 'audio/mpeg',
+        ptt: false,
+      }, { quoted: message });
+
+      await sock.sendMessage(groupId, {
+        image: { url: video.thumbnail },
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}\nViews: ${video.views}`,
+      });
+    } catch (err) { return reply('Erro ao baixar audio: ' + err.message); }
+    return;
+  }
+
+  if (command === '#playvideo' || command === '#ytmp4') {
+    if (args.length === 0) return reply('Use: #playvideo [nome ou URL]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      if (video.seconds > 600) return reply('Video muito longo (max 10 minutos).');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
+
+      // APIs de fallback para vídeo
+      const ytVideoApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
+
+      let videoUrl = null;
+      for (const apiFn of ytVideoApis) {
+        try { videoUrl = await apiFn(); if (videoUrl) break; } catch {}
+      }
+      if (!videoUrl) return reply('Nao foi possivel obter o video. Tente novamente mais tarde.');
+
+      const videoResp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120000 });
+      const buffer = Buffer.from(videoResp.data);
+
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}`,
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar video: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ytsearch') {
+    if (args.length === 0) return reply('Use: #ytsearch [busca]');
+    try {
+      const results = await yts(args.join(' '));
+      const videos = results.videos.slice(0, 5);
+      if (!videos.length) return reply('Nenhum resultado.');
+      let text = '*Resultados no YouTube:*\n\n';
+      videos.forEach((v, i) => {
+        text += `${i + 1}. *${v.title}*\nDuracao: ${v.timestamp}\nURL: ${v.url}\n\n`;
+      });
+      return reply(text);
+    } catch { return reply('Erro na busca.'); }
+  }
+
+ // #tiktok - Baixar vídeo do TikTok (COM MÚLTIPLAS APIS DE FALLBACK)
+if (command === '#tiktok' || command === '#tt') {
+  if (args.length === 0) return reply('❌ Use: #tiktok [URL do vídeo]\nExemplo: #tiktok https://tiktok.com/@user/video/123456');
+  
+  const url = args[0];
+  
+  // Validar URL do TikTok
+  if (!url.includes('tiktok.com')) {
+    return reply('❌ URL inválida! Certifique-se de enviar um link do TikTok.');
+  }
+
+  await reply('⏳ *Baixando vídeo do TikTok...*\n\nIsso pode levar alguns segundos.');
+
+  // Lista de APIs para tentar (em ordem de confiabilidade)
+  const apis = [
+    {
+      name: 'API TikDown',
+      url: `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video?.noWatermark || data?.video?.no_wm || data?.video?.[0]
+    },
+    {
+      name: 'API TikWM',
+      url: `https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.data?.play || data?.data?.wmplay
+    },
+    {
+      name: 'API TikDown2',
+      url: `https://api.tikdown.xyz/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.result?.video?.no_watermark
+    },
+    {
+      name: 'API TikMate',
+      url: `https://api.tikmate.cc/api?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video_url
+    },
+    {
+      name: 'API SSSTik',
+      url: `https://api.ssstik.io/video?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video
+    }
+  ];
+
+  // Tentar cada API
+  for (const api of apis) {
+    try {
+      console.log(`[TIKTOK] Tentando API: ${api.name}`);
+      
+      const response = await axios.get(api.url, { 
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const data = response.data;
+      const videoUrl = api.getVideo(data);
+
+      if (videoUrl) {
+        console.log(`[TIKTOK] ✅ API ${api.name} funcionou!`);
+
+        // Baixar o vídeo
+        const videoResp = await axios.get(videoUrl, { 
+          responseType: 'arraybuffer', 
+          timeout: 60000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        // Obter informações do vídeo
+        const author = data?.author?.nickname || data?.data?.author?.nickname || 'TikTok User';
+        const caption = data?.caption || data?.data?.title || 'Vídeo do TikTok';
+        const views = data?.play_count || data?.data?.play_count || '0';
+
+        // Enviar o vídeo
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: `📱 *TikTok*\n\n👤 *Autor:* ${author}\n📝 *Descrição:* ${caption}\n👁️ *Views:* ${views}\n\n✅ Download realizado com sucesso!`,
+          mentions: [sender]
+        }, { quoted: message });
+
+        return; // Sai da função se funcionou
+      }
+    } catch (err) {
+      console.log(`[TIKTOK] ❌ API ${api.name} falhou:`, err.message);
+      continue; // Tenta a próxima API
+    }
+  }
+
+  // Se todas as APIs falharem, tenta um método alternativo
+  try {
+    console.log('[TIKTOK] Tentando método alternativo...');
+    
+    // Extrair ID do vídeo da URL
+    const videoId = url.match(/\d{15,}/)?.[0] || url.match(/video\/(\d+)/)?.[1];
+    
+    if (videoId) {
+      // Usar API alternativa
+      const altUrl = `https://tiktok-video-no-watermark-download.p.rapidapi.com/tiktok?url=https://www.tiktok.com/@user/video/${videoId}`;
+      
+      const response = await axios.get(altUrl, {
+        timeout: 15000,
+        headers: {
+          'X-RapidAPI-Key': 'sua-chave-aqui', // Você precisaria de uma chave
+          'X-RapidAPI-Host': 'tiktok-video-no-watermark-download.p.rapidapi.com'
+        }
+      });
+
+      if (response.data?.videoUrl) {
+        const videoResp = await axios.get(response.data.videoUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: '📱 *TikTok*\n\n✅ Download realizado com sucesso!'
+        }, { quoted: message });
+
+        return;
+      }
+    }
+  } catch (err) {
+    console.log('[TIKTOK] ❌ Método alternativo falhou:', err.message);
+  }
+
+  // Se tudo falhar, mostrar instruções
+  return reply(`❌ *Erro ao baixar TikTok*\n\nNão foi possível baixar o vídeo no momento. As APIs estão instáveis.\n\n💡 *Sugestões:*\n1️⃣ Tente novamente mais tarde\n2️⃣ Use o comando #instagram para vídeos do Instagram\n3️⃣ Use #play para músicas do YouTube\n\n📱 *Link:* ${url}`);
+}
+
+  if (command === '#instagram' || command === '#insta') {
+    if (args.length === 0) return reply('Use: #instagram [URL]');
+    const url = args[0];
+    if (!url.includes('instagram.com')) return reply('❌ URL invalida. Envie um link do Instagram.');
+    await reply('⏳ Baixando do Instagram...');
+
+    // Lista de APIs para tentar
+    const instaApis = [
+      {
+        name: 'xteam',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          if (!data?.url) return null;
+          return { mediaUrl: data.url, isVideo: data.type === 'video' };
+        }
+      },
+      {
+        name: 'siputzx',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          const isVideo = link.includes('.mp4') || data?.data?.[0]?.type === 'video';
+          return { mediaUrl: link, isVideo };
+        }
+      },
+      {
+        name: 'ryzendesu',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: link.includes('.mp4') };
+        }
+      },
+      {
+        name: 'tikwm-ig',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.play || data?.data?.wmplay;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: true };
+        }
+      },
+    ];
+
+    for (const api of instaApis) {
+      try {
+        console.log(`[INSTAGRAM] Tentando API: ${api.name}`);
+        const result = await api.fetch();
+        if (!result?.mediaUrl) continue;
+
+        const mediaResp = await axios.get(result.mediaUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        const buffer = Buffer.from(mediaResp.data);
+
+        if (result.isVideo) {
+          await sock.sendMessage(groupId, { video: buffer, caption: '📸 Instagram' }, { quoted: message });
+        } else {
+          await sock.sendMessage(groupId, { image: buffer, caption: '📸 Instagram' }, { quoted: message });
+        }
+        console.log(`[INSTAGRAM] ✅ API ${api.name} funcionou!`);
+        return;
+      } catch (err) {
+        console.log(`[INSTAGRAM] ❌ API ${api.name} falhou:`, err.message);
+      }
+    }
+
+    return reply('❌ Nao foi possivel baixar o conteudo do Instagram.\n\nVerifique se:\n• O link e valido\n• O perfil e publico\n• Tente novamente mais tarde');
+  }
+
+  if (command === '#pinterest') {
+    if (args.length === 0) return reply('Use: #pinterest [busca]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/pinterest?search=${encodeURIComponent(query)}`,
+        { timeout: 15000 }
+      );
+      if (!data?.result?.length) return reply('Nenhuma imagem encontrada.');
+      const img = data.result[Math.floor(Math.random() * Math.min(data.result.length, 5))];
+      await sock.sendMessage(groupId, { image: { url: img }, caption: `Pinterest: ${query}` }, { quoted: message });
+    } catch { return reply('Erro ao buscar no Pinterest.'); }
+    return;
+  }
+
+  if (command === '#letra') {
+    if (args.length === 0) return reply('Use: #letra [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.vagalume.com.br/search.php?q=${encodeURIComponent(query)}&apikey=09f9e8f8`,
+        { timeout: 10000 }
+      );
+      if (data.type === 'notfound') return reply('Letra nao encontrada.');
+      const music = data.response?.docs?.[0];
+      if (!music) return reply('Letra nao encontrada.');
+      const letra = music.text.substring(0, 1500);
+      return reply(`*${music.band.name} - ${music.name}*\n\n${letra}${music.text.length > 1500 ? '\n\n[Continua...]' : ''}`);
+    } catch { return reply('Erro ao buscar letra.'); }
+  }
+
+  if (command === '#spotify') {
+    if (args.length === 0) return reply('Use: #spotify [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=1`,
+        { timeout: 10000 }
+      );
+      const song = data?.data?.results?.[0];
+      if (!song) return reply('Musica nao encontrada.');
+      return reply(`*${song.name}*\nArtista: ${song.artists?.primary?.map(a => a.name).join(', ') || '-'}\nAlbum: ${song.album?.name || '-'}\nDuracao: ${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, '0')}`);
+    } catch { return reply('Erro ao buscar no Spotify.'); }
+  }
+
+  if (command === '#autobaixar') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.autoBaixar = true; saveSettings(); return reply('Auto-baixar ativado! Links de YouTube, TikTok e Instagram serao baixados automaticamente.'); }
+    if (args[0] === 'off') { settings.autoBaixar = false; saveSettings(); return reply('Auto-baixar desativado.'); }
+    return reply(`Auto-baixar: ${settings.autoBaixar ? 'Ativado' : 'Desativado'}\nUse: #autobaixar [on/off]`);
+  }
+
+  // ===========================================================
+  // ADMINISTRACAO
   // ===========================================================
 
   if (command === '#ban') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     
+    // Verificar se está respondendo (reply) a uma mensagem
     const quotedParticipant = getQuotedSender(message);
     const mentioned = getMentioned(message);
     
-    let targetUser = quotedParticipant || (mentioned.length ? mentioned[0] : null);
+    // Prioridade: quem foi mencionado na mensagem respondida (reply)
+    let targetUser = null;
+    if (quotedParticipant) {
+      targetUser = quotedParticipant;
+    } else if (mentioned.length) {
+      targetUser = mentioned[0];
+    }
     
-    if (!targetUser) return reply('❌ Mencione ou responda a mensagem do usuário que deseja banir!');
+    if (!targetUser) return reply('❌ Mencione (reply) a mensagem do usuário que deseja banir!');
     
     try {
+      // Deletar a mensagem do usuário banido (a mensagem que foi respondida)
       const quotedKey = message.message?.extendedTextMessage?.contextInfo;
       if (quotedKey?.stanzaId) {
         await sock.sendMessage(groupId, { delete: {
@@ -1321,59 +1569,60 @@ Use:
         }}).catch(() => {});
       }
       
+      // Remover o usuário do grupo
       await sock.groupParticipantsUpdate(groupId, [targetUser], 'remove');
       return reply(`✅ Usuário @${targetUser.split('@')[0]} banido com sucesso!`);
     } catch (err) { return reply('❌ Erro ao banir: ' + err.message); }
   }
 
   if (command === '#add') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (!args[0]) return reply('❌ Use: #add [numero com DDI]\nEx: #add 5592999999999');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #add [numero com DDI]\nEx: #add 5592999999999');
     const num = args[0].replace(/\D/g, '') + '@s.whatsapp.net';
     try {
       await sock.groupParticipantsUpdate(groupId, [num], 'add');
-      return reply('✅ Membro adicionado!');
-    } catch (err) { return reply('❌ Erro ao adicionar: ' + err.message); }
+      return reply('Membro adicionado!');
+    } catch (err) { return reply('Erro ao adicionar: ' + err.message); }
   }
 
   if (command === '#promover') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
     const mentioned = getMentioned(message);
-    if (!mentioned.length) return reply('❌ Marque o usuário!');
+    if (!mentioned.length) return reply('Marque o usuario!');
     try {
       await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'promote');
-      return reply('✅ Usuário promovido a admin!');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Usuario promovido a admin!');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#rebaixar') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
     const mentioned = getMentioned(message);
-    if (!mentioned.length) return reply('❌ Marque o usuário!');
+    if (!mentioned.length) return reply('Marque o usuario!');
     try {
       await sock.groupParticipantsUpdate(groupId, [mentioned[0]], 'demote');
-      return reply('✅ Admin rebaixado!');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Admin rebaixado!');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#cargo') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
     const mentioned = getMentioned(message);
-    if (!mentioned.length || !args[1]) return reply('❌ Use: #cargo @usuario [admin|mod|aux|remover]');
+    if (!mentioned.length || !args[1]) return reply('Use: #cargo @usuario [admin|mod|aux|remover]');
     const userId = mentioned[0];
     const novoCargo = args[1].toLowerCase();
-    if (!['admin', 'mod', 'aux', 'remover'].includes(novoCargo)) return reply('❌ Cargos válidos: admin, mod, aux, remover');
+    if (!['admin', 'mod', 'aux', 'remover'].includes(novoCargo)) return reply('Cargos validos: admin, mod, aux, remover');
     if (!cargos[groupId]) cargos[groupId] = {};
     if (novoCargo === 'remover') { delete cargos[groupId][userId]; }
     else { cargos[groupId][userId] = novoCargo; }
     saveDB('cargos', cargos);
-    return reply(novoCargo === 'remover' ? '✅ Cargo removido!' : `✅ Cargo "${novoCargo}" atribuído!`);
+    return reply(novoCargo === 'remover' ? 'Cargo removido!' : `Cargo "${novoCargo}" atribuido com sucesso!`);
   }
 
   if (command === '#advertir') {
-    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
     const mentioned = getMentioned(message);
-    if (!mentioned.length) return reply('❌ Marque o usuário para advertir!');
+    if (!mentioned.length) return reply('Marque o usuario para advertir!');
     const userId = mentioned[0];
     const motivo = args.slice(1).join(' ') || 'Sem motivo';
     if (!warnings[groupId]) warnings[groupId] = {};
@@ -1384,19 +1633,20 @@ Use:
     const limit = settings.warningLimit || 3;
     if (count >= limit) {
       try {
+        // Adicionar na lista negra automaticamente
         if (!blacklist[userId]) blacklist[userId] = { date: Date.now(), reason: 'Atingiu limite de advertencias' };
         saveDB('blacklist', blacklist);
         await sock.groupParticipantsUpdate(groupId, [userId], 'remove');
         delete warnings[groupId][userId];
         saveDB('warnings', warnings);
         return sock.sendMessage(groupId, {
-          text: `⚠️ Usuário banido por atingir ${limit} advertências!\nMotivo: ${motivo}`,
+          text: `Usuario banido por atingir ${limit} advertencias!\nMotivo: ${motivo}`,
           mentions: [userId],
         });
-      } catch (err) { return reply('❌ Erro ao banir: ' + err.message); }
+      } catch (err) { return reply('Erro ao banir apos advertencias: ' + err.message); }
     }
     return sock.sendMessage(groupId, {
-      text: `⚠️ Advertência ${count}/${limit} aplicada!\nMotivo: ${motivo}`,
+      text: `Advertencia ${count}/${limit} aplicada!\nMotivo: ${motivo}`,
       mentions: [userId],
     });
   }
@@ -1405,30 +1655,39 @@ Use:
     const mentioned = getMentioned(message);
     const userId = mentioned.length ? mentioned[0] : sender;
     const userWarns = warnings[groupId]?.[userId];
-    if (!userWarns || !userWarns.length) return reply('✅ Sem advertências.');
+    if (!userWarns || !userWarns.length) return reply('Sem advertencias.');
     const limit = settings.warningLimit || 3;
-    let text = `⚠️ *Advertências:* ${userWarns.length}/${limit}\n\n`;
+    let text = `Advertencias: ${userWarns.length}/${limit}\n\n`;
     userWarns.forEach((w, i) => {
-      text += `${i + 1}. ${new Date(w.date).toLocaleString('pt-BR')}\n   Motivo: ${w.motivo}\n\n`;
+      text += `${i + 1}. ${new Date(w.date).toLocaleString('pt-BR')}\nMotivo: ${w.motivo}\n\n`;
     });
     return reply(text);
   }
 
   if (command === '#removewarnings' || command === '#rm_adv') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     const mentioned = getMentioned(message);
-    if (!mentioned.length) return reply('❌ Marque o usuário!');
+    if (!mentioned.length) return reply('Marque o usuario!');
     const userId = mentioned[0];
     if (warnings[groupId]) delete warnings[groupId][userId];
     saveDB('warnings', warnings);
-    return reply('✅ Advertências removidas!');
+    return reply('Advertencias removidas!');
+  }
+
+  if (command === '#setlimitec') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    const num = parseInt(args[0]);
+    if (isNaN(num) || num < 1) return reply('Use: #setlimitec [numero]\nEx: #setlimitec 3');
+    settings.warningLimit = num;
+    saveSettings();
+    return reply(`Limite de advertencias definido para ${num}.`);
   }
 
   if (command === '#advertidos') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     const grpWarns = warnings[groupId];
-    if (!grpWarns || !Object.keys(grpWarns).length) return reply('✅ Nenhum usuário advertido.');
-    let text = '*Usuários com advertências:*\n\n';
+    if (!grpWarns || !Object.keys(grpWarns).length) return reply('Nenhum usuario advertido.');
+    let text = 'Usuarios com advertencias:\n\n';
     const mentions = [];
     Object.entries(grpWarns).forEach(([uid, warns]) => {
       if (warns.length > 0) { text += `@${uid.split('@')[0]}: ${warns.length} adv.\n`; mentions.push(uid); }
@@ -1437,22 +1696,22 @@ Use:
   }
 
   if (command === '#marcar' || command === '#tagall' || command === '#totag') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     try {
       const meta = await sock.groupMetadata(groupId);
       const participants = meta.participants.map(p => p.id);
-      const text = args.join(' ') || 'Marcação geral!';
-      await sock.sendMessage(groupId, { text: `📢 *Marcação Geral*\n\n${text}`, mentions: participants });
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      const text = args.join(' ') || 'Marcacao geral!';
+      await sock.sendMessage(groupId, { text: `*Marcacao Geral*\n\n${text}`, mentions: participants });
+    } catch (err) { return reply('Erro: ' + err.message); }
     return;
   }
 
   if (command === '#deletar' || command === '#del') {
-    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
     const quoted = getQuoted(message);
-    if (!quoted) return reply('❌ Marque a mensagem para deletar!');
+    if (!quoted) return reply('Marque a mensagem para deletar!');
     const quotedKey = message.message?.extendedTextMessage?.contextInfo;
-    if (!quotedKey) return reply('❌ Não foi possível identificar a mensagem.');
+    if (!quotedKey) return reply('Nao foi possivel identificar a mensagem.');
     try {
       await sock.sendMessage(groupId, { delete: {
         remoteJid: groupId,
@@ -1460,551 +1719,1028 @@ Use:
         id: quotedKey.stanzaId,
         participant: quotedKey.participant,
       }});
-    } catch { return reply('❌ Não consegui apagar (preciso ser admin).'); }
+    } catch { return reply('Nao consegui apagar a mensagem (preciso ser admin).'); }
     return;
   }
 
-  if (command === '#fechargp') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+  if (command === '#fechargp' || command === '#colloportus') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     try {
       await sock.groupSettingUpdate(groupId, 'announcement');
-      return reply('🔒 Grupo fechado! Apenas admins podem enviar.');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Grupo fechado! Apenas admins podem enviar mensagens.');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
-  if (command === '#abrirgp') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+  if (command === '#abrirgp' || command === '#alohomora') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     try {
       await sock.groupSettingUpdate(groupId, 'not_announcement');
-      return reply('🔓 Grupo aberto! Todos podem enviar.');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Grupo aberto! Todos podem enviar mensagens.');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#linkgp') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     try {
       const code = await sock.groupInviteCode(groupId);
-      return reply(`🔗 *Link do grupo:*\nhttps://chat.whatsapp.com/${code}`);
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply(`Link do grupo:\nhttps://chat.whatsapp.com/${code}`);
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#nomegp') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
-    if (!args.length) return reply('❌ Use: #nomegp [novo nome]');
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #nomegp [novo nome]');
     try {
       await sock.groupUpdateSubject(groupId, args.join(' '));
-      return reply('✅ Nome do grupo alterado!');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Nome do grupo alterado!');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#descgp') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
-    if (!args.length) return reply('❌ Use: #descgp [nova descrição]');
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #descgp [nova descricao]');
     try {
       await sock.groupUpdateDescription(groupId, args.join(' '));
-      return reply('✅ Descrição alterada!');
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply('Descricao do grupo alterada!');
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#regras') {
     if (!args.length) {
       const r = rules[groupId];
-      return reply(r ? `📋 *Regras do grupo:*\n\n${r}` : '❌ Nenhuma regra definida.');
+      return reply(r ? `*Regras do grupo:*\n\n${r}` : 'Nenhuma regra definida.');
     }
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
     rules[groupId] = args.join(' ');
     saveDB('rules', rules);
-    return reply('✅ Regras definidas!');
+    return reply('Regras definidas!');
   }
 
-  if (command === '#gpinfo') {
+  if (command === '#gpinfo' || command === '#grupoinfo') {
     try {
       const meta = await sock.groupMetadata(groupId);
       const admins = meta.participants.filter(p => p.admin).length;
-      return reply(`📊 *Informações do Grupo*\n\n📛 Nome: ${meta.subject}\n📝 Descrição: ${meta.desc || '-'}\n📅 Criado: ${new Date(meta.creation * 1000).toLocaleString('pt-BR')}\n👥 Membros: ${meta.participants.length}\n👑 Admins: ${admins}`);
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
+      return reply(`*Informacoes do Grupo*\n\nNome: ${meta.subject}\nDescricao: ${meta.desc || '-'}\nCriado: ${new Date(meta.creation * 1000).toLocaleString('pt-BR')}\nMembros: ${meta.participants.length}\nAdmins: ${admins}`);
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   if (command === '#admins') {
     try {
       const meta = await sock.groupMetadata(groupId);
       const admins = meta.participants.filter(p => p.admin);
-      let text = '*👑 Admins do grupo:*\n\n';
-      admins.forEach(a => { text += `➤ @${a.id.split('@')[0]}\n`; });
+      let text = '*Admins do grupo:*\n\n';
+      admins.forEach(a => { text += `@${a.id.split('@')[0]}\n`; });
       return sock.sendMessage(groupId, { text, mentions: admins.map(a => a.id) });
-    } catch { return reply('❌ Erro ao buscar admins.'); }
+    } catch { return reply('Erro ao buscar admins.'); }
   }
 
-  // ===========================================================
-  // CONFIGURAÇÕES DE GRUPO
-  // ===========================================================
+  if (command === '#so_adm') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.soAdm = true; saveSettings(); return reply('Modo so-admins ativado!'); }
+    if (args[0] === 'off') { settings.soAdm = false; saveSettings(); return reply('Modo so-admins desativado.'); }
+    return reply(`Modo so-admins: ${settings.soAdm ? 'Ativado' : 'Desativado'}\nUse: #so_adm [on/off]`);
+  }
 
   if (command === '#bemvindo') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('✅ Boas-vindas ativadas!'); }
-    if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('✅ Boas-vindas desativadas.'); }
-    return reply(`📢 Boas-vindas: ${settings.welcome ? '✅ Ativado' : '❌ Desativado'}\nUse: #bemvindo [on/off]`);
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.welcome = true; saveSettings(); return reply('✅ Boas-vindas ativadas!\n\n💡 *Dica:* Use os comandos abaixo para personalizar:\n• #bemvindo_msg [texto] — Mensagem personalizada\n• #bemvindo_cor [hex] — Cor do fundo (ex: #0f172a)\n• #bemvindo_acento [hex] — Cor de destaque (ex: #6366f1)\n• #bemvindo_bg — Envie imagem de fundo junto com este comando\n\nVariáveis disponíveis: @user @group @desc @numero @membros'); }
+    if (args[0] === 'off') { settings.welcome = false; saveSettings(); return reply('Boas-vindas desativadas.'); }
+    return reply(`Boas-vindas: ${settings.welcome ? '✅ Ativado' : '❌ Desativado'}\nUse: #bemvindo [on/off]`);
   }
 
+  // #bemvindo_msg — Definir mensagem personalizada de boas-vindas
   if (command === '#bemvindo_msg') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (!args.length) return reply('❌ Use: #bemvindo_msg [texto]\n\nVariáveis: @user @group @desc @numero @membros');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('❌ Use: #bemvindo_msg [texto]\n\nVariáveis disponíveis (use @var ou {var}):\n@user ou {user} ou {nome} — Menciona o membro\n@group ou {group} ou {grupo} — Nome do grupo\n@desc ou {desc} — Descrição do grupo\n@numero ou {numero} — Número formatado (+55...)\n@membros ou {membros} ou {total} — Total de membros');
     settings.welcomeMsg = args.join(' ');
     saveSettings();
     return reply(`✅ Mensagem de boas-vindas definida:\n\n${settings.welcomeMsg}`);
   }
 
+  // #bemvindo_cor — Definir cor de fundo do card de boas-vindas (hex)
+  if (command === '#bemvindo_cor') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const hex = args[0]?.replace('#', '');
+    if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return reply('❌ Use: #bemvindo_cor [cor hex]\nEx: #bemvindo_cor 0f172a\nEx: #bemvindo_cor 1a1a2e');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    settings.welcomeBgColor = { r, g, b };
+    saveSettings();
+    return reply(`✅ Cor de fundo definida: #${hex}`);
+  }
+
+  // #bemvindo_acento — Definir cor de acento/destaque do card
+  if (command === '#bemvindo_acento') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const hex = args[0]?.replace('#', '');
+    if (!hex || !/^[0-9a-fA-F]{6}$/.test(hex)) return reply('❌ Use: #bemvindo_acento [cor hex]\nEx: #bemvindo_acento 6366f1\nEx: #bemvindo_acento e91e63');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    settings.welcomeAccentColor = { r, g, b };
+    saveSettings();
+    return reply(`✅ Cor de destaque definida: #${hex}`);
+  }
+
+  // #bemvindo_bg — Definir imagem de fundo personalizada (enviar junto com imagem)
+  if (command === '#bemvindo_bg') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const imageMsg = message.message?.imageMessage;
+    if (!imageMsg) return reply('❌ Envie uma imagem junto com o comando #bemvindo_bg\nExemplo: Envie a imagem com a legenda "#bemvindo_bg"');
+    try {
+      const imgBuffer = await downloadMedia(imageMsg, 'image');
+      if (!imgBuffer) return reply('❌ Erro ao baixar imagem.');
+      const bgDir = path.join(DATA_DIR, 'welcome_bg');
+      if (!fs.existsSync(bgDir)) fs.mkdirSync(bgDir, { recursive: true });
+      const bgPath = path.join(bgDir, `${groupId.replace('@g.us', '')}_bg.jpg`);
+      // Redimensionar para 800x400 e salvar
+      await sharp(imgBuffer).resize(800, 400, { fit: 'cover' }).jpeg({ quality: 85 }).toFile(bgPath);
+      // Remover bg anterior se existia
+      if (settings.welcomeBgPath && settings.welcomeBgPath !== bgPath) {
+        try { fs.unlinkSync(settings.welcomeBgPath); } catch {}
+      }
+      settings.welcomeBgPath = bgPath;
+      saveSettings();
+      return reply('✅ Imagem de fundo de boas-vindas definida com sucesso!\n\nAgora o card de boas-vindas usará esta imagem como plano de fundo.');
+    } catch (err) {
+      console.log('[WELCOME_BG] Erro:', err.message);
+      return reply('❌ Erro ao salvar imagem de fundo.');
+    }
+  }
+
+  // #bemvindo_reset — Resetar configurações de boas-vindas para padrão
+  if (command === '#bemvindo_reset') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (settings.welcomeBgPath) {
+      try { fs.unlinkSync(settings.welcomeBgPath); } catch {}
+    }
+    settings.welcomeMsg = '';
+    settings.welcomeBgColor = null;
+    settings.welcomeAccentColor = null;
+    settings.welcomeBgPath = null;
+    saveSettings();
+    return reply('✅ Boas-vindas resetadas para o padrão do SignaBot!');
+  }
+
+  // #bemvindo_preview — Prévia da imagem de boas-vindas
+  if (command === '#bemvindo_preview') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    await reply('⏳ Gerando prévia do card de boas-vindas...');
+    // Simular como se o próprio sender fosse entrar no grupo
+    try {
+      const fakeParticipants = [sender];
+      sock.ev.emit('group-participants.update', {
+        id: groupId,
+        participants: fakeParticipants,
+        action: 'add'
+      });
+      return;
+    } catch (err) {
+      return reply('❌ Erro ao gerar prévia: ' + err.message);
+    }
+  }
+
   if (command === '#antilink') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.antilink = true; saveSettings(); return reply('✅ Antilink ativado!'); }
-    if (args[0] === 'off') { settings.antilink = false; saveSettings(); return reply('✅ Antilink desativado.'); }
-    return reply(`🔗 Antilink: ${settings.antilink ? '✅ Ativado' : '❌ Desativado'}\nUse: #antilink [on/off]`);
-  }
-
-  if (command === '#antivendas') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.antiVendas = true; saveSettings(); return reply('✅ Anti-vendas ativado!'); }
-    if (args[0] === 'off') { settings.antiVendas = false; saveSettings(); return reply('✅ Anti-vendas desativado.'); }
-    return reply(`🚫 Anti-vendas: ${settings.antiVendas ? '✅ Ativado' : '❌ Desativado'}\nUse: #antivendas [on/off]`);
-  }
-
-  if (command === '#so_adm') {
-    if (!cargoCheck(groupId, 'admin')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.soAdm = true; saveSettings(); return reply('✅ Modo só-admins ativado!'); }
-    if (args[0] === 'off') { settings.soAdm = false; saveSettings(); return reply('✅ Modo só-admins desativado.'); }
-    return reply(`🔒 Só-admins: ${settings.soAdm ? '✅ Ativado' : '❌ Desativado'}\nUse: #so_adm [on/off]`);
-  }
-
-  if (command === '#x9visuunica' || command === '#antiviewonce') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.antiViewOnce = true; saveSettings(); return reply('✅ Revelar visualização única ativado!'); }
-    if (args[0] === 'off') { settings.antiViewOnce = false; saveSettings(); return reply('✅ Revelar visualização única desativado.'); }
-    return reply(`👁️ Revelar V.U.: ${settings.antiViewOnce ? '✅ Ativado' : '❌ Desativado'}\nUse: #x9visuunica [on/off]`);
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antilink = true; saveSettings(); return reply('Antilink ativado! Apenas Instagram, YouTube e TikTok permitidos.'); }
+    if (args[0] === 'off') { settings.antilink = false; saveSettings(); return reply('Antilink desativado.'); }
+    return reply(`Antilink: ${settings.antilink ? 'Ativado' : 'Desativado'}\nUse: #antilink [on/off]`);
   }
 
   if (command === '#antipalavra') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (args[0] === 'on') { settings.antiPalavra = true; saveSettings(); return reply('✅ Anti-palavrão ativado!'); }
-    if (args[0] === 'off') { settings.antiPalavra = false; saveSettings(); return reply('✅ Anti-palavrão desativado.'); }
-    return reply(`🚫 Anti-palavrão: ${settings.antiPalavra ? '✅ Ativado' : '❌ Desativado'}\nUse: #antipalavra [on/off]`);
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiPalavra = true; saveSettings(); return reply('Filtro de palavroes ativado!'); }
+    if (args[0] === 'off') { settings.antiPalavra = false; saveSettings(); return reply('Filtro de palavroes desativado.'); }
+    return reply(`Filtro de palavroes: ${settings.antiPalavra ? 'Ativado' : 'Desativado'}\nUse: #antipalavra [on/off]`);
   }
 
   if (command === '#addpalavra') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (!args[0]) return reply('❌ Use: #addpalavra [palavra]');
-    if (!settings.palavroes) settings.palavroes = [];
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #addpalavra [palavra]');
     const word = args[0].toLowerCase();
-    if (settings.palavroes.includes(word)) return reply('❌ Palavra já está na lista.');
-    settings.palavroes.push(word);
-    saveSettings();
-    return reply(`✅ Palavra "${word}" adicionada ao filtro.`);
+    if (!settings.palavroes) settings.palavroes = [];
+    if (!settings.palavroes.includes(word)) { settings.palavroes.push(word); saveSettings(); return reply(`Palavra "${word}" adicionada ao filtro.`); }
+    return reply('Palavra ja esta no filtro.');
   }
 
   if (command === '#delpalavra') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (!args[0]) return reply('❌ Use: #delpalavra [palavra]');
-    if (!settings.palavroes) return reply('❌ Lista vazia.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #delpalavra [palavra]');
     const word = args[0].toLowerCase();
-    const idx = settings.palavroes.indexOf(word);
-    if (idx === -1) return reply('❌ Palavra não encontrada.');
-    settings.palavroes.splice(idx, 1);
+    settings.palavroes = (settings.palavroes || []).filter(p => p !== word);
     saveSettings();
-    return reply(`✅ Palavra "${word}" removida do filtro.`);
+    return reply(`Palavra "${word}" removida do filtro.`);
   }
 
   if (command === '#listapalavrao') {
-    if (!settings.palavroes?.length) return reply('📋 Lista de palavras proibidas: vazia');
-    return reply(`📋 *Palavras proibidas:*\n\n${settings.palavroes.join(', ')}`);
+    if (!settings.palavroes || !settings.palavroes.length) return reply('Nenhum palavrao no filtro.');
+    return reply(`Palavroes no filtro:\n\n${settings.palavroes.join(', ')}`);
   }
 
-  // ===========================================================
-  // LISTA NEGRA
-  // ===========================================================
+  if (command === '#antivendas') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiVendas = true; saveSettings(); return reply('🚫 Anti vendas ativado! Mensagens de venda serão deletadas e os admins serão notificados.'); }
+    if (args[0] === 'off') { settings.antiVendas = false; saveSettings(); return reply('✅ Anti vendas desativado.'); }
+    return reply(`🚫 Anti vendas: ${settings.antiVendas ? 'Ativado' : 'Desativado'}\nUse: #antivendas [on/off]`);
+  }
 
+  if (command === '#anticall') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.anticall = true; saveSettings(); return reply('Anti-chamada ativado!'); }
+    if (args[0] === 'off') { settings.anticall = false; saveSettings(); return reply('Anti-chamada desativado.'); }
+    return reply(`Anti-chamada: ${settings.anticall ? 'Ativado' : 'Desativado'}\nUse: #anticall [on/off]`);
+  }
+
+  if (command === '#x9visuunica') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args[0] === 'on') { settings.antiViewOnce = true; saveSettings(); return reply('Revelador de view-once ativado!'); }
+    if (args[0] === 'off') { settings.antiViewOnce = false; saveSettings(); return reply('Revelador de view-once desativado.'); }
+    return reply(`View-once revelar: ${settings.antiViewOnce ? 'Ativado' : 'Desativado'}\nUse: #x9visuunica [on/off]`);
+  }
+
+  if (command === '#mute') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    const userId = mentioned[0];
+    if (!muted[groupId]) muted[groupId] = [];
+    if (!muted[groupId].includes(userId)) { muted[groupId].push(userId); saveDB('muted', muted); }
+    return sock.sendMessage(groupId, { text: `Usuario mutado! Mensagens dele serao apagadas.`, mentions: [userId] });
+  }
+
+  if (command === '#desmute') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Marque o usuario!');
+    const userId = mentioned[0];
+    if (muted[groupId]) { muted[groupId] = muted[groupId].filter(u => u !== userId); saveDB('muted', muted); }
+    return sock.sendMessage(groupId, { text: `Usuario desmutado!`, mentions: [userId] });
+  }
+
+  // LISTA NEGRA
   if (command === '#listanegra') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    if (args[0] === 'add') {
-      if (!args[1]) return reply('❌ Use: #listanegra add [numero]');
-      const num = args[1].replace(/\D/g, '') + '@s.whatsapp.net';
-      blacklist[num] = { date: Date.now(), reason: 'Adicionado manualmente' };
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'add') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+      const num = args[1]?.replace(/\D/g, '');
+      if (!num) return reply('Use: #listanegra add [numero]');
+      blacklist[num + '@s.whatsapp.net'] = { date: Date.now(), reason: args.slice(2).join(' ') || 'Banido' };
       saveDB('blacklist', blacklist);
-      return reply(`✅ ${args[1]} adicionado à lista negra.`);
+      return reply(`Numero ${num} adicionado a lista negra.`);
     }
-    
-    if (args[0] === 'rem' || args[0] === 'remove') {
-      if (!args[1]) return reply('❌ Use: #listanegra rem [numero]');
-      const num = args[1].replace(/\D/g, '') + '@s.whatsapp.net';
-      if (!blacklist[num]) return reply('❌ Número não está na lista negra.');
-      delete blacklist[num];
+    if (sub === 'rem') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+      const num = args[1]?.replace(/\D/g, '');
+      if (!num) return reply('Use: #listanegra rem [numero]');
+      delete blacklist[num + '@s.whatsapp.net'];
       saveDB('blacklist', blacklist);
-      return reply(`✅ ${args[1]} removido da lista negra.`);
+      return reply(`Numero ${num} removido da lista negra.`);
     }
-    
-    if (args[0] === 'ver' || !args[0]) {
-      const list = Object.keys(blacklist);
-      if (!list.length) return reply('📋 Lista negra: vazia');
-      let text = '*📋 Lista Negra:*\n\n';
-      list.forEach((num, i) => {
-        text += `${i + 1}. ${num.split('@')[0]}\n`;
+    if (sub === 'ver') {
+      const entries = Object.entries(blacklist);
+      if (!entries.length) return reply('Lista negra vazia.');
+      let text = '*Lista Negra:*\n\n';
+      entries.slice(0, 30).forEach(([jid, info]) => {
+        text += `+${jid.split('@')[0]} — ${info.reason}\n`;
       });
       return reply(text);
     }
-    
-    return reply('❌ Use: #listanegra [add|rem|ver] [numero]');
+    return reply('Use: #listanegra [add|rem|ver] [numero]');
   }
 
-  // ===========================================================
-  // AFK / AUSENTE
-  // ===========================================================
+  // ANOTACOES
+  if (command === '#anotar') {
+    if (!cargoCheck(groupId, 'admin', 'mod', 'aux')) return reply('Sem permissao.');
+    if (!args.length) return reply('Use: #anotar [texto]');
+    if (!notes[groupId]) notes[groupId] = [];
+    notes[groupId].push({ text: args.join(' '), date: Date.now(), by: sender });
+    saveDB('notes', notes);
+    return reply(`Nota ${notes[groupId].length} salva!`);
+  }
 
-  if (command === '#ausente' || command === '#afk') {
-    const msg = args.join(' ') || 'Estou ausente';
-    afkList[sender] = { msg, time: Date.now() };
+  if (command === '#anotacao' || command === '#anotacoes') {
+    const grpNotes = notes[groupId];
+    if (!grpNotes || !grpNotes.length) return reply('Nenhuma anotacao salva.');
+    let text = '*Anotacoes:*\n\n';
+    grpNotes.forEach((n, i) => { text += `${i + 1}. ${n.text}\n   (${new Date(n.date).toLocaleString('pt-BR')})\n\n`; });
+    return reply(text);
+  }
+
+  if (command === '#tirar_nota' || command === '#rmnota') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const idx = parseInt(args[0]) - 1;
+    if (!notes[groupId] || isNaN(idx) || !notes[groupId][idx]) return reply('Numero de nota invalido.');
+    notes[groupId].splice(idx, 1);
+    saveDB('notes', notes);
+    return reply('Nota removida!');
+  }
+
+  // SORTEIO - CORRIGIDO
+if (command === '#sorteio') {
+  try {
+    const meta = await sock.groupMetadata(groupId);
+    // Primeiro obtém o ID do bot
+    const botId = sock.user?.id;
+    // Depois faz o filtro sem usar await
+    const members = botId 
+      ? meta.participants.filter(p => p.id !== botId)
+      : meta.participants;
+    
+    if (!members.length) return reply('Nenhum membro para sortear.');
+    const winner = members[Math.floor(Math.random() * members.length)];
+    return sock.sendMessage(groupId, {
+      text: `*Resultado do Sorteio!*\n\nParabens ao sortudo(a):\n@${winner.id.split('@')[0]}!\n\n${args.join(' ')}`,
+      mentions: [winner.id],
+    });
+  } catch (err) { 
+    console.log('[ERRO SORTEIO]', err);
+    return reply('Erro ao realizar sorteio.'); 
+  }
+}
+
+  // MENSAGENS AGENDADAS
+  if (command === '#mensagem-automatica') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    if (args.length < 2) return reply('Use: #mensagem-automatica [HH:MM] [texto]\nEx: #mensagem-automatica 08:00 Bom dia!');
+    const time = args[0];
+    const text = args.slice(1).join(' ');
+    if (!/^\d{2}:\d{2}$/.test(time)) return reply('Formato de hora invalido. Use HH:MM\nEx: 08:00');
+    if (!autoMessages[groupId]) autoMessages[groupId] = [];
+    autoMessages[groupId].push({ time, text, id: Date.now() });
+    saveDB('autoMessages', autoMessages);
+    return reply(`Mensagem automatica agendada para ${time}:\n"${text}"`);
+  }
+
+  if (command === '#listar-mensagens-automaticas') {
+    const msgs = autoMessages[groupId];
+    if (!msgs || !msgs.length) return reply('Nenhuma mensagem automatica agendada.');
+    let text = '*Mensagens Automaticas:*\n\n';
+    msgs.forEach((m, i) => { text += `${i + 1}. [${m.time}] ${m.text}\n`; });
+    return reply(text);
+  }
+
+  if (command === '#limpar-mensagens-automaticas') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    autoMessages[groupId] = [];
+    saveDB('autoMessages', autoMessages);
+    return reply('Mensagens automaticas removidas!');
+  }
+
+  // HORARIO ABERTURA/FECHAMENTO
+  if (command === '#opengp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #opengp [HH:MM]\nEx: #opengp 08:00');
+    settings.openAt = args[0];
+    saveSettings();
+    return reply(`Grupo vai abrir automaticamente as ${args[0]}`);
+  }
+
+  if (command === '#closegp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    if (!args[0]) return reply('Use: #closegp [HH:MM]\nEx: #closegp 22:00');
+    settings.closeAt = args[0];
+    saveSettings();
+    return reply(`Grupo vai fechar automaticamente as ${args[0]}`);
+  }
+
+  if (command === '#rm_opengp') {
+    if (!cargoCheck(groupId, 'admin')) return reply('Sem permissao.');
+    settings.openAt = null;
+    settings.closeAt = null;
+    saveSettings();
+    return reply('Horarios de abertura/fechamento removidos.');
+  }
+
+  // AFK - AUSENTE
+  if (command === '#ausente') {
+    const msg = args.join(' ') || 'Estou ausente no momento.';
+    afkList[sender] = { msg, time: Date.now(), groupId };
     saveDB('afkList', afkList);
-    return reply(`💤 Você está marcado como ausente.\nMensagem: ${msg}`);
+    return sock.sendMessage(groupId, { text: `@${sender.split('@')[0]} entrou no modo ausente.\nMensagem: ${msg}`, mentions: [sender] });
   }
 
   if (command === '#ativo') {
-    if (!afkList[sender]) return reply('✅ Você não estava ausente.');
-    const afk = afkList[sender];
-    delete afkList[sender];
-    saveDB('afkList', afkList);
-    return reply(`✅ Bem-vindo de volta! Você ficou ausente por ${formatTime(Date.now() - afk.time)}`);
+    if (afkList[sender]) {
+      const afk = afkList[sender];
+      const duration = formatTime(Date.now() - afk.time);
+      delete afkList[sender];
+      saveDB('afkList', afkList);
+      return sock.sendMessage(groupId, { text: `@${sender.split('@')[0]} voltou!\nFicou ausente por: ${duration}`, mentions: [sender] });
+    }
+    return reply('Voce nao esta ausente.');
   }
 
   if (command === '#listarafk') {
-    const afks = Object.entries(afkList);
-    if (!afks.length) return reply('✅ Ninguém está ausente.');
-    let text = '*💤 Usuários Ausentes:*\n\n';
-    const mentions = [];
-    afks.forEach(([uid, data]) => {
-      text += `@${uid.split('@')[0]}: ${data.msg}\n`;
-      mentions.push(uid);
+    const entries = Object.entries(afkList).filter(([, v]) => v.groupId === groupId);
+    if (!entries.length) return reply('Nenhum membro ausente.');
+    let text = '*Membros Ausentes:*\n\n';
+    entries.forEach(([uid, info]) => {
+      text += `@${uid.split('@')[0]} — ${info.msg} (${formatTime(Date.now() - info.time)} ausente)\n`;
     });
-    return sock.sendMessage(groupId, { text, mentions });
+    return sock.sendMessage(groupId, { text, mentions: entries.map(([uid]) => uid) });
   }
 
-  // ===========================================================
-  // COMANDOS PERSONALIZADOS
-  // ===========================================================
-
-  if (command === '#comando') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    const imageMsg = message.message?.imageMessage;
-    let cmdName = args[0]?.toLowerCase();
-    let cmdText = args.slice(1).join(' ');
-    
-    if (imageMsg) {
-      const caption = imageMsg.caption || '';
-      const parts = caption.replace(/^#comando\s*/i, '').trim().split(/\s+/);
-      cmdName = parts[0]?.toLowerCase();
-      cmdText = parts.slice(1).join(' ');
-    }
-    
-    if (!cmdName) return reply('❌ Use: #comando [nome] [texto]');
-    
-    let imagePath = null;
-    if (imageMsg) {
-      try {
-        const buffer = await downloadMedia(imageMsg, 'image');
-        if (buffer) {
-          imagePath = path.join(MEDIA_DIR, `cmd_${groupId.split('@')[0]}_${cmdName}.jpg`);
-          fs.writeFileSync(imagePath, buffer);
-        }
-      } catch {}
-    }
-    
-    if (!customCmds[groupId]) customCmds[groupId] = {};
-    customCmds[groupId][cmdName] = {
-      text: cmdText, // Preserva formatação original
-      imagePath,
-      creator: sender,
-      createdAt: Date.now()
-    };
-    saveDB('customCmds', customCmds);
-    
-    return reply(`✅ Comando *#${cmdName}* criado!\n${imagePath ? '📷 Com imagem' : ''}\n${cmdText ? `📝 ${cmdText.substring(0, 50)}...` : ''}`);
-  }
-
-  if (command === '#vercomandos' || command === '#listacmd') {
-    const cmds = customCmds[groupId];
-    if (!cmds || !Object.keys(cmds).length) return reply('📋 Nenhum comando personalizado.\n\nUse #comando [nome] [texto] para criar.');
-    
-    let text = '*📋 Comandos Personalizados:*\n\n';
-    Object.entries(cmds).forEach(([name, cmd], i) => {
-      const hasImg = cmd.imagePath ? '📷' : '';
-      const preview = cmd.text ? (cmd.text.length > 30 ? cmd.text.substring(0, 30) + '...' : cmd.text) : '';
-      text += `${i + 1}. #${name} ${hasImg}\n   ${preview}\n`;
-    });
-    
-    return reply(text);
-  }
-
-  if (command === '#delcomando') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    const cmdName = args[0]?.toLowerCase();
-    if (!cmdName) return reply('❌ Use: #delcomando [nome]');
-    if (!customCmds[groupId]?.[cmdName]) return reply('❌ Comando não encontrado.');
-    
-    if (customCmds[groupId][cmdName].imagePath) {
-      try { fs.unlinkSync(customCmds[groupId][cmdName].imagePath); } catch {}
-    }
-    delete customCmds[groupId][cmdName];
-    saveDB('customCmds', customCmds);
-    
-    return reply(`✅ Comando #${cmdName} deletado!`);
-  }
-
-  // Executar comando personalizado
-  const cmdName = command.substring(1).toLowerCase();
-  if (customCmds[groupId]?.[cmdName]) {
-    const cmd = customCmds[groupId][cmdName];
-    
-    if (cmd.imagePath && fs.existsSync(cmd.imagePath)) {
-      const imgBuffer = fs.readFileSync(cmd.imagePath);
-      await sock.sendMessage(groupId, {
-        image: imgBuffer,
-        caption: cmd.text || ''
-      }, { quoted: message });
-    } else if (cmd.text) {
-      await reply(cmd.text);
-    }
-    return;
-  }
-
-  // ===========================================================
-  // NOTAS
-  // ===========================================================
-
-  if (command === '#anotar') {
-    if (!args.length) return reply('❌ Use: #anotar [texto]');
-    if (!notes[groupId]) notes[groupId] = [];
-    notes[groupId].push({
-      text: args.join(' '),
-      author: sender,
-      date: Date.now()
-    });
-    saveDB('notes', notes);
-    return reply(`✅ Nota #${notes[groupId].length} adicionada!`);
-  }
-
-  if (command === '#anotacao' || command === '#notas') {
-    if (!notes[groupId]?.length) return reply('📋 Nenhuma nota registrada.');
-    let text = '*📋 Notas do Grupo:*\n\n';
-    notes[groupId].forEach((n, i) => {
-      text += `*${i + 1}.* ${n.text}\n   📅 ${new Date(n.date).toLocaleString('pt-BR')}\n\n`;
-    });
-    return reply(text);
-  }
-
-  if (command === '#tirar_nota') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    const idx = parseInt(args[0]) - 1;
-    if (isNaN(idx) || !notes[groupId]?.[idx]) return reply('❌ Nota não encontrada.');
-    notes[groupId].splice(idx, 1);
-    saveDB('notes', notes);
-    return reply('✅ Nota removida!');
-  }
-
-  // ===========================================================
-  // SORTEIO
-  // ===========================================================
-
-  if (command === '#sorteio') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
+  // BANGHOST / INATIVOS
+  if (command === '#banghost' || command === '#inativos') {
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
+    const days = parseInt(args[0]) || 30;
+    const limit = Date.now() - days * 86400000;
     try {
       const meta = await sock.groupMetadata(groupId);
-      const participants = meta.participants.map(p => p.id);
-      const winner = participants[Math.floor(Math.random() * participants.length)];
-      const prize = args.join(' ') || 'Prêmio misterioso';
-      
-      await sock.sendMessage(groupId, {
-        text: `🎉 *SORTEIO*\n\n🏆 Prêmio: ${prize}\n\n🎊 Vencedor: @${winner.split('@')[0]}\n\nParabéns!`,
-        mentions: [winner]
+      const activity = userActivity[groupId] || {};
+      const inactive = meta.participants.filter(p => {
+        if (p.admin) return false;
+        const act = activity[p.id];
+        return !act || act.lastActive < limit;
       });
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
-    return;
+      if (!inactive.length) return reply(`Nenhum membro inativo ha mais de ${days} dias!`);
+      let text = `*Membros inativos ha +${days} dias:* ${inactive.length}\n\n`;
+      inactive.slice(0, 20).forEach(p => { text += `@${p.id.split('@')[0]}\n`; });
+      if (inactive.length > 20) text += `\n...e mais ${inactive.length - 20} membros.`;
+
+      if (command === '#banghost') {
+        await sock.groupParticipantsUpdate(groupId, inactive.map(p => p.id), 'remove');
+        return reply(`${inactive.length} membros fantasmas removidos!`);
+      }
+      return sock.sendMessage(groupId, { text, mentions: inactive.slice(0, 20).map(p => p.id) });
+    } catch (err) { return reply('Erro: ' + err.message); }
   }
 
   // ===========================================================
-  // JOGOS E DIVERSÃO
+  // RANKING / ATIVIDADE
+  // ===========================================================
+
+  // ========== HELPER: Substituição de variáveis em mensagens ==========
+  // Suporta tanto @user / @group quanto {user} / {nome} / {group} etc.
+  const replaceVars = (text, vars) => {
+    let result = text;
+    for (const [key, value] of Object.entries(vars)) {
+      // Suporta: @key, {key}
+      result = result
+        .replace(new RegExp(`@${key}`, 'gi'), value)
+        .replace(new RegExp(`\\{${key}\\}`, 'gi'), value);
+    }
+    // Aliases comuns em português
+    if (vars.user) {
+      result = result
+        .replace(/@nome/gi, vars.user)
+        .replace(/\{nome\}/gi, vars.user);
+    }
+    if (vars.group) {
+      result = result
+        .replace(/@grupo/gi, vars.group)
+        .replace(/\{grupo\}/gi, vars.group);
+    }
+    if (vars.membros) {
+      result = result
+        .replace(/@total/gi, vars.membros)
+        .replace(/\{total\}/gi, vars.membros);
+    }
+    return result;
+  };
+
+  // ========== HELPER: Resolve número real a partir do JID ==========
+  // JIDs com formato @lid (ex: 212171434754106@lid) são IDs internos do WhatsApp.
+  // Precisamos mapear pelo grupo para obter o número real (@s.whatsapp.net).
+  const resolveParticipantJid = async (uid, gId) => {
+    // Se já é um JID de número real, retornar como está
+    if (uid.endsWith('@s.whatsapp.net')) return uid;
+    // Se é um @lid, buscar no metadata do grupo
+    if (uid.endsWith('@lid') && gId) {
+      try {
+        const meta = await sock.groupMetadata(gId);
+        const match = meta.participants.find(p => p.id === uid || p.lid === uid);
+        if (match) return match.id; // retorna o @s.whatsapp.net
+      } catch {}
+    }
+    return uid; // fallback
+  };
+
+  // ========== HELPER: Formata número como +55 XX 99999-9999 ==========
+  const formatPhoneNumber = (jid) => {
+    const num = jid.split('@')[0].replace(/\D/g, '');
+    if (num.startsWith('55') && num.length >= 12) {
+      // Brasileiro: 55 + DDD(2) + número(8-9)
+      const ddd = num.substring(2, 4);
+      const rest = num.substring(4);
+      if (rest.length === 9) {
+        return `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`;
+      } else if (rest.length === 8) {
+        return `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+      }
+      return `+${num}`;
+    }
+    // Internacional genérico
+    return `+${num}`;
+  };
+
+  if (command === '#rankativos') {
+    const activity = userActivity[groupId];
+    if (!activity || !Object.keys(activity).length) return reply('Nenhuma atividade registrada ainda.');
+    const sorted = Object.entries(activity).sort((a, b) => b[1].messageCount - a[1].messageCount).slice(0, 10);
+
+    // Resolver JIDs reais e montar texto
+    const mentionJids = [];
+    let text = '🏆 *Top 10 Membros Mais Ativos:*\n\n';
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const [uid, data] = sorted[i];
+      const realJid = await resolveParticipantJid(uid, groupId);
+      const numFormatted = formatPhoneNumber(realJid);
+      const lastDate = data.lastActive ? new Date(data.lastActive).toLocaleDateString('pt-BR') : 'N/A';
+      text += `${medals[i]} @${realJid.split('@')[0]} (${numFormatted}) — ${data.messageCount} msgs\n`;
+      mentionJids.push(realJid);
+    }
+
+    return sock.sendMessage(groupId, { text, mentions: mentionJids });
+  }
+
+  if (command === '#rankativosg') {
+    const activity = userActivity[groupId];
+    if (!activity) return reply('Nenhuma atividade registrada.');
+    const today = new Date().setHours(0, 0, 0, 0);
+    const todayEntries = Object.entries(activity)
+      .filter(([, d]) => d.lastActive >= today)
+      .sort((a, b) => b[1].messageCount - a[1].messageCount)
+      .slice(0, 5);
+    if (!todayEntries.length) return reply('Nenhuma atividade hoje.');
+    let text = '🏆 *Top 5 Ativos Hoje:*\n\n';
+    const mentionJids = [];
+    for (let i = 0; i < todayEntries.length; i++) {
+      const [uid, data] = todayEntries[i];
+      const realJid = await resolveParticipantJid(uid, groupId);
+      const numFormatted = formatPhoneNumber(realJid);
+      text += `${i + 1}. @${realJid.split('@')[0]} (${numFormatted}) — ${data.messageCount} msgs\n`;
+      mentionJids.push(realJid);
+    }
+    return sock.sendMessage(groupId, { text, mentions: mentionJids });
+  }
+
+  // ===========================================================
+  // BRINCADEIRAS
   // ===========================================================
 
   if (command === '#ppt') {
-    const choices = ['pedra', 'papel', 'tesoura'];
-    const userChoice = args[0]?.toLowerCase();
-    if (!choices.includes(userChoice)) return reply('❌ Use: #ppt [pedra|papel|tesoura]');
-    const botChoice = choices[Math.floor(Math.random() * 3)];
-    
+    const opcoes = ['Pedra', 'Papel', 'Tesoura'];
+    const bot = opcoes[Math.floor(Math.random() * 3)];
+    const user = args[0];
+    if (!user) return reply(`Escolha: #ppt [pedra|papel|tesoura]\nBotei: *${bot}*`);
+    const u = user.toLowerCase();
+    if (!['pedra', 'papel', 'tesoura'].includes(u)) return reply('Escolha entre: pedra, papel ou tesoura');
     let result = '';
-    if (userChoice === botChoice) result = '🤝 Empate!';
-    else if (
-      (userChoice === 'pedra' && botChoice === 'tesoura') ||
-      (userChoice === 'papel' && botChoice === 'pedra') ||
-      (userChoice === 'tesoura' && botChoice === 'papel')
-    ) result = '🎉 Você venceu!';
-    else result = '😢 Você perdeu!';
-    
-    return reply(`🎮 *Pedra, Papel, Tesoura*\n\n👤 Você: ${userChoice}\n🤖 Bot: ${botChoice}\n\n${result}`);
+    if (u === bot.toLowerCase()) result = 'Empate!';
+    else if ((u === 'pedra' && bot === 'Tesoura') || (u === 'papel' && bot === 'Pedra') || (u === 'tesoura' && bot === 'Papel')) result = 'Voce ganhou!';
+    else result = 'Eu ganhei!';
+    return reply(`Voce: ${user}\nBot: ${bot}\n\n${result}`);
   }
 
   if (command === '#dado') {
-    const sides = parseInt(args[0]) || 6;
-    if (sides < 2 || sides > 100) return reply('❌ O dado deve ter entre 2 e 100 lados.');
-    const result = Math.floor(Math.random() * sides) + 1;
-    return reply(`🎲 *Dado de ${sides} lados*\n\nResultado: *${result}*`);
-  }
-
-  if (command === '#8ball') {
-    if (!args.length) return reply('❌ Use: #8ball [pergunta]');
-    const answers = [
-      '✅ Sim, com certeza!',
-      '✅ Definitivamente sim!',
-      '🤔 Provavelmente sim',
-      '🤷 Talvez...',
-      '🤔 Não tenho certeza',
-      '❌ Provavelmente não',
-      '❌ Não!',
-      '❌ Definitivamente não!',
-      '🔮 Pergunte novamente depois',
-      '🎱 Os sinais apontam que sim'
-    ];
-    const answer = answers[Math.floor(Math.random() * answers.length)];
-    return reply(`🎱 *Bola 8 Mágica*\n\n❓ ${args.join(' ')}\n\n${answer}`);
-  }
-
-  if (command === '#casal') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    try {
-      const meta = await sock.groupMetadata(groupId);
-      const participants = meta.participants.map(p => p.id);
-      if (participants.length < 2) return reply('❌ Precisa de pelo menos 2 membros.');
-      
-      const shuffled = participants.sort(() => Math.random() - 0.5);
-      const p1 = shuffled[0];
-      const p2 = shuffled[1];
-      
-      await sock.sendMessage(groupId, {
-        text: `💕 *Casal do Dia*\n\n❤️ @${p1.split('@')[0]}\n💞\n❤️ @${p2.split('@')[0]}\n\nSeriam um belo casal!`,
-        mentions: [p1, p2]
-      });
-    } catch (err) { return reply('❌ Erro: ' + err.message); }
-    return;
-  }
-
-  if (command === '#ship') {
-    const mentioned = getMentioned(message);
-    if (mentioned.length < 2) return reply('❌ Use: #ship @usuario1 @usuario2');
-    const pct = Math.floor(Math.random() * 101);
-    let emoji = pct >= 80 ? '💕' : pct >= 60 ? '❤️' : pct >= 40 ? '💛' : pct >= 20 ? '💔' : '❌';
-    return sock.sendMessage(groupId, {
-      text: `💘 *Compatibilidade*\n\n👤 @${mentioned[0].split('@')[0]}\n💞 x\n👤 @${mentioned[1].split('@')[0]}\n\n${emoji} Compatibilidade: *${pct}%*`,
-      mentions: mentioned
-    });
+    const lados = parseInt(args[0]) || 6;
+    const result = Math.floor(Math.random() * lados) + 1;
+    return reply(`Dado de ${lados} lados: *${result}*`);
   }
 
   if (command === '#porcentagem' || command === '#chance') {
-    if (!args.length) return reply('❌ Use: #porcentagem [texto]');
+    const text = args.join(' ') || senderName;
     const pct = Math.floor(Math.random() * 101);
-    return reply(`📊 *Porcentagem*\n\n❓ ${args.join(' ')}\n\n🎯 Resultado: *${pct}%*`);
+    return reply(`${text}: ${pct}%`);
+  }
+
+  if (command === '#8ball') {
+    const respostas = ['Sim!', 'Nao.', 'Talvez...', 'Com certeza!', 'Definitivamente nao.', 'Provavelmente sim.', 'As perspectivas nao sao boas.', 'Sinais apontam que sim.', 'Pergunte novamente mais tarde.', 'Nao conte com isso.'];
+    return reply(`Pergunta: ${args.join(' ')}\n\nResposta: ${respostas[Math.floor(Math.random() * respostas.length)]}`);
+  }
+
+  if (command === '#verdadeoudesafio' || command === '#vod') {
+    const verdades = ['Qual e o seu maior medo?', 'Voce ja mentiu para um amigo?', 'Qual e a coisa mais embaracosa que ja fez?', 'Voce tem uma queda por alguem do grupo?'];
+    const desafios = ['Mande uma foto fazendo careta!', 'Escreva um poema em 2 minutos!', 'Fale em voz alta a musica que estava ouvindo agora!', 'Mande uma selfie agora!'];
+    const all = [...verdades.map(t => `Verdade: ${t}`), ...desafios.map(t => `Desafio: ${t}`)];
+    return reply(all[Math.floor(Math.random() * all.length)]);
+  }
+
+  if (command === '#eujaeununca') {
+    const frases = ['Eu ja fui acordado no meio da noite por mensagem no grupo.', 'Eu nunca entendi meme de anime.', 'Eu ja tive mais de 500 mensagens nao lidas.', 'Eu nunca fiz figurinha de foto dos outros.', 'Eu ja enviei mensagem para a pessoa errada.'];
+    return reply(frases[Math.floor(Math.random() * frases.length)]);
+  }
+
+  if (command === '#casal') {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const members = meta.participants;
+      if (members.length < 2) return reply('Membros insuficientes.');
+      const shuffled = [...members].sort(() => 0.5 - Math.random());
+      const p1 = shuffled[0];
+      const p2 = shuffled[1];
+      return sock.sendMessage(groupId, {
+        text: `O casal do dia e:\n@${p1.id.split('@')[0]} + @${p2.id.split('@')[0]}`,
+        mentions: [p1.id, p2.id],
+      });
+    } catch { return reply('Erro ao sortear casal.'); }
+  }
+
+  if (command === '#fakemsg') {
+    const mentioned = getMentioned(message);
+    if (!mentioned.length || args.length < 2) return reply('Use: #fakemsg @usuario [texto]');
+    const uid = mentioned[0];
+    const txt = args.slice(1).join(' ');
+    await sock.sendMessage(groupId, { text: `@${uid.split('@')[0]}: "${txt}"`, mentions: [uid] });
+    return;
+  }
+
+  if (command === '#bot') {
+    const respostas = ['Estou aqui, pode falar!', 'Sim, estou acordado!', 'Presente!', 'Online e pronto para servir!', 'Oi, sou o ' + BOT_NAME + '!'];
+    return reply(respostas[Math.floor(Math.random() * respostas.length)]);
+  }
+
+  // RANKS DE BRINCADEIRA
+  const rankCommands = ['#rankgay', '#rankgado', '#rankcorno', '#rankgostoso', '#rankgostosa', '#rankkenga', '#rankhetero', '#ranknazista', '#rankotaku'];
+  if (rankCommands.includes(command)) {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      const members = meta.participants;
+      const winner = members[Math.floor(Math.random() * members.length)];
+      const rankName = command.replace('#rank', '').charAt(0).toUpperCase() + command.replace('#rank', '').slice(1);
+      const pct = Math.floor(Math.random() * 100) + 1;
+      return sock.sendMessage(groupId, {
+        text: `*Rank ${rankName} do dia:*\n\n@${winner.id.split('@')[0]} com ${pct}%!`,
+        mentions: [winner.id],
+      });
+    } catch { return reply('Erro ao calcular ranking.'); }
   }
 
   // ===========================================================
-  // RANKINGS
+  // ANIVERSARIO
   // ===========================================================
 
-  if (command === '#rankativos') {
-    if (!isGroup) return reply('❌ Use em um grupo.');
-    const activity = userActivity[groupId];
-    if (!activity || !Object.keys(activity).length) return reply('📊 Sem dados de atividade.');
-    
-    const sorted = Object.entries(activity)
-      .sort(([,a], [,b]) => b.messageCount - a.messageCount)
-      .slice(0, 10);
-    
-    let text = '*🏆 Top 10 Mais Ativos:*\n\n';
-    const mentions = [];
-    sorted.forEach(([uid, data], i) => {
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-      text += `${medal} @${uid.split('@')[0]} — ${data.messageCount} msgs\n`;
-      mentions.push(uid);
+  if (command === '#aniversario') {
+    if (!args[0]) return reply('Use: #aniversario [DD/MM]\nEx: #aniversario 25/12');
+    const [d, m] = (args[0] || '').split('/').map(Number);
+    if (!d || !m || d > 31 || m > 12) return reply('Data invalida. Use DD/MM');
+    if (!birthdays[groupId]) birthdays[groupId] = {};
+    birthdays[groupId][sender] = { day: d, month: m, name: senderName };
+    saveDB('birthdays', birthdays);
+    return reply(`Aniversario cadastrado: ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`);
+  }
+
+  if (command === '#meuaniversario') {
+    const b = birthdays[groupId]?.[sender];
+    if (!b) return reply('Voce nao cadastrou seu aniversario. Use: #aniversario [DD/MM]');
+    return reply(`Seu aniversario: ${String(b.day).padStart(2,'0')}/${String(b.month).padStart(2,'0')}`);
+  }
+
+  // ===========================================================
+  // FEEDBACK
+  // ===========================================================
+
+  if (command === '#feedback') {
+    if (!args.length) return reply('Use: #feedback [seu feedback]');
+    const fb = args.join(' ');
+    await sock.sendMessage(OWNER_JIDS[0], {
+      text: `*Feedback recebido!*\nGrupo: ${groupId}\nMembro: @${sender.split('@')[0]} (${senderName})\n\n${fb}`,
     });
-    
-    return sock.sendMessage(groupId, { text, mentions });
+    return reply('Feedback enviado ao dono do bot! Obrigado.');
   }
 
   // ===========================================================
-  // UTILIDADES
+  // GOLD (moeda virtual)
   // ===========================================================
+
+  const goldDB = loadDB('gold');
+
+  const getGold = (uid) => goldDB[uid] || 0;
+  const addGold = (uid, amount) => {
+    goldDB[uid] = (goldDB[uid] || 0) + amount;
+    saveDB('gold', goldDB);
+  };
+  const setGold = (uid, amount) => { goldDB[uid] = amount; saveDB('gold', goldDB); };
+
+  const dailyDB = loadDB('daily');
+
+  if (command === '#gold') {
+    const myGold = getGold(sender);
+    return reply(`Seus Golds: *${myGold}*`);
+  }
+
+  if (command === '#daily') {
+    const lastDaily = dailyDB[sender];
+    const now = Date.now();
+    const oneDayMs = 86400000;
+    if (lastDaily && (now - lastDaily) < oneDayMs) {
+      const next = lastDaily + oneDayMs - now;
+      return reply(`Voce ja coletou sua recompensa diaria!\nProxima em: ${formatTime(next)}`);
+    }
+    const reward = Math.floor(Math.random() * 500) + 100;
+    addGold(sender, reward);
+    dailyDB[sender] = now;
+    saveDB('daily', dailyDB);
+    return reply(`Recompensa diaria coletada!\n+${reward} Golds!\nTotal: ${getGold(sender)} Golds`);
+  }
+
+  if (command === '#rankgold') {
+    const sorted = Object.entries(goldDB).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!sorted.length) return reply('Nenhum gold registrado ainda.');
+    let text = '*Top 10 Ranking de Golds:*\n\n';
+    sorted.forEach(([uid, amount], i) => { text += `${i + 1}. @${uid.split('@')[0]} — ${amount} Golds\n`; });
+    return sock.sendMessage(groupId, { text, mentions: sorted.map(([uid]) => uid) });
+  }
+
+  if (command === '#doargold') {
+    const mentioned = getMentioned(message);
+    const amount = parseInt(args[1]);
+    if (!mentioned.length || isNaN(amount) || amount <= 0) return reply('Use: #doargold @usuario [quantidade]');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    addGold(sender, -amount);
+    addGold(mentioned[0], amount);
+    return sock.sendMessage(groupId, {
+      text: `@${sender.split('@')[0]} doou ${amount} golds para @${mentioned[0].split('@')[0]}!`,
+      mentions: [sender, mentioned[0]],
+    });
+  }
+
+  if (command === '#minerar_gold') {
+    const mineDB = loadDB('mine');
+    const lastMine = mineDB[sender];
+    const cooldown = 3600000; // 1 hora
+    if (lastMine && Date.now() - lastMine < cooldown) {
+      return reply(`Aguarde ${formatTime(cooldown - (Date.now() - lastMine))} para minerar novamente.`);
+    }
+    const amount = Math.floor(Math.random() * 200) + 50;
+    addGold(sender, amount);
+    mineDB[sender] = Date.now();
+    saveDB('mine', mineDB);
+    return reply(`Mineracao concluida!\n+${amount} Golds!\nTotal: ${getGold(sender)} Golds`);
+  }
+
+  if (command === '#apostar' || command === '#cassino') {
+    const amount = parseInt(args[0]);
+    if (isNaN(amount) || amount <= 0) return reply('Use: #apostar [quantidade]\nEx: #apostar 100');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    const win = Math.random() > 0.5;
+    if (win) { addGold(sender, amount); return reply(`Voce ganhou ${amount} golds!\nTotal: ${getGold(sender)} Golds`); }
+    else { addGold(sender, -amount); return reply(`Voce perdeu ${amount} golds!\nTotal: ${getGold(sender)} Golds`); }
+  }
+
+  if (command === '#doublegold') {
+    const amount = parseInt(args[0]);
+    if (isNaN(amount) || amount <= 0) return reply('Use: #doublegold [quantidade]');
+    const myGold = getGold(sender);
+    if (myGold < amount) return reply(`Golds insuficientes! Voce tem ${myGold} golds.`);
+    const roll = Math.random();
+    if (roll > 0.6) { addGold(sender, amount * 2); return reply(`Dobrou! +${amount * 2} golds!\nTotal: ${getGold(sender)} Golds`); }
+    else { addGold(sender, -amount); return reply(`Perdeu! -${amount} golds.\nTotal: ${getGold(sender)} Golds`); }
+  }
+
+  if (command === '#roubargold') {
+    const mentioned = getMentioned(message);
+    if (!mentioned.length) return reply('Use: #roubargold @usuario');
+    const target = mentioned[0];
+    const targetGold = getGold(target);
+    if (targetGold <= 0) return reply('Esse usuario nao tem golds para roubar!');
+    const robDB = loadDB('rob');
+    if (robDB[sender] && Date.now() - robDB[sender] < 3600000) return reply(`Aguarde ${formatTime(3600000 - (Date.now() - robDB[sender]))} para roubar novamente.`);
+    const success = Math.random() > 0.4;
+    robDB[sender] = Date.now();
+    saveDB('rob', robDB);
+    if (success) {
+      const amount = Math.floor(targetGold * (Math.random() * 0.3 + 0.1));
+      addGold(target, -amount);
+      addGold(sender, amount);
+      return sock.sendMessage(groupId, { text: `Roubo bem-sucedido! Voce roubou ${amount} golds de @${target.split('@')[0]}!`, mentions: [sender, target] });
+    } else {
+      const fine = Math.floor(Math.random() * 100) + 50;
+      addGold(sender, -fine);
+      return sock.sendMessage(groupId, { text: `Roubo falhou! Voce perdeu ${fine} golds de multa!`, mentions: [sender] });
+    }
+  }
+
+  // ===========================================================
+  // INFO / PING / DONO / SENDER
+  // ===========================================================
+
+  // ===========================================================
+  // PERFIL DO USUÁRIO
+  // ===========================================================
+
+  if (command === '#perfil') {
+    const mentioned = getMentioned(message);
+    const quotedParticipant = getQuotedSender(message);
+    const targetUser = quotedParticipant || (mentioned.length ? mentioned[0] : sender);
+    const targetName = targetUser === sender ? senderName : (targetUser.split('@')[0]);
+    
+    // Quantidade de mensagens
+    const activity = userActivity[groupId] || {};
+    const userAct = activity[targetUser] || { messageCount: 0, lastActive: 0 };
+    const msgCount = userAct.messageCount || 0;
+    
+    // XP (baseado em mensagens: 10xp por mensagem)
+    const xp = msgCount * 10;
+    const level = Math.floor(xp / 500) + 1;
+    const xpNextLevel = (level * 500) - xp;
+    
+    // Gold
+    const goldDB = loadDB('gold');
+    const userGold = goldDB[targetUser] || 0;
+    
+    // Região pelo DDD/DDI
+    const userNumber = targetUser.split('@')[0];
+    let regiao = 'Desconhecida';
+    
+    // Mapa de DDDs brasileiros
+    const dddMap = {
+      '11': 'São Paulo - SP', '12': 'São José dos Campos - SP', '13': 'Santos - SP',
+      '14': 'Bauru - SP', '15': 'Sorocaba - SP', '16': 'Ribeirão Preto - SP',
+      '17': 'São José do Rio Preto - SP', '18': 'Presidente Prudente - SP', '19': 'Campinas - SP',
+      '21': 'Rio de Janeiro - RJ', '22': 'Campos dos Goytacazes - RJ', '24': 'Volta Redonda - RJ',
+      '27': 'Vitória - ES', '28': 'Cachoeiro de Itapemirim - ES',
+      '31': 'Belo Horizonte - MG', '32': 'Juiz de Fora - MG', '33': 'Governador Valadares - MG',
+      '34': 'Uberlândia - MG', '35': 'Poços de Caldas - MG', '37': 'Divinópolis - MG', '38': 'Montes Claros - MG',
+      '41': 'Curitiba - PR', '42': 'Ponta Grossa - PR', '43': 'Londrina - PR',
+      '44': 'Maringá - PR', '45': 'Foz do Iguaçu - PR', '46': 'Francisco Beltrão - PR',
+      '47': 'Joinville - SC', '48': 'Florianópolis - SC', '49': 'Chapecó - SC',
+      '51': 'Porto Alegre - RS', '53': 'Pelotas - RS', '54': 'Caxias do Sul - RS', '55': 'Santa Maria - RS',
+      '61': 'Brasília - DF', '62': 'Goiânia - GO', '63': 'Palmas - TO', '64': 'Rio Verde - GO',
+      '65': 'Cuiabá - MT', '66': 'Rondonópolis - MT', '67': 'Campo Grande - MS', '68': 'Rio Branco - AC', '69': 'Porto Velho - RO',
+      '71': 'Salvador - BA', '73': 'Ilhéus - BA', '74': 'Juazeiro - BA', '75': 'Feira de Santana - BA', '77': 'Vitória da Conquista - BA',
+      '79': 'Aracaju - SE',
+      '81': 'Recife - PE', '82': 'Maceió - AL', '83': 'João Pessoa - PB',
+      '84': 'Natal - RN', '85': 'Fortaleza - CE', '86': 'Teresina - PI',
+      '87': 'Petrolina - PE', '88': 'Juazeiro do Norte - CE', '89': 'Picos - PI',
+      '91': 'Belém - PA', '92': 'Manaus - AM', '93': 'Santarém - PA', '94': 'Marabá - PA',
+      '95': 'Boa Vista - RR', '96': 'Macapá - AP', '97': 'Coari - AM', '98': 'São Luís - MA', '99': 'Imperatriz - MA',
+    };
+    
+    // DDI internacionais
+    const ddiMap = {
+      '1': 'Estados Unidos / Canadá', '44': 'Reino Unido', '351': 'Portugal',
+      '34': 'Espanha', '33': 'França', '49': 'Alemanha', '39': 'Itália',
+      '81': 'Japão', '82': 'Coreia do Sul', '86': 'China',
+      '91': 'Índia', '7': 'Rússia', '52': 'México', '54': 'Argentina',
+      '56': 'Chile', '57': 'Colômbia', '58': 'Venezuela', '591': 'Bolívia',
+      '595': 'Paraguai', '598': 'Uruguai', '51': 'Peru',
+    };
+    
+    if (userNumber.startsWith('55') && userNumber.length >= 12) {
+      // Número brasileiro: 55 + DDD(2) + número(8-9)
+      const ddd = userNumber.substring(2, 4);
+      regiao = dddMap[ddd] || `Brasil (DDD ${ddd})`;
+    } else {
+      // Número internacional - tentar detectar DDI
+      let found = false;
+      for (const [ddi, pais] of Object.entries(ddiMap).sort((a, b) => b[0].length - a[0].length)) {
+        if (userNumber.startsWith(ddi)) {
+          regiao = pais;
+          found = true;
+          break;
+        }
+      }
+      if (!found && userNumber.startsWith('55')) {
+        regiao = 'Brasil';
+      }
+    }
+    
+    // Verificar se é admin
+    let isAdminUser = false;
+    let cargoUser = 'Membro';
+    if (isGroup) {
+      isAdminUser = await isAdmin(sock, groupId, targetUser);
+      const cargoVal = getCargo(groupId, targetUser);
+      if (isOwner(targetUser)) cargoUser = '👑 Dono do Bot';
+      else if (isAdminUser) cargoUser = '⭐ Admin';
+      else if (cargoVal) cargoUser = `🏷️ ${cargoVal.charAt(0).toUpperCase() + cargoVal.slice(1)}`;
+      else cargoUser = '👤 Membro';
+    }
+    
+    // Advertências
+    const userWarns = warnings[groupId]?.[targetUser] || [];
+    const warnLimit = settings.warningLimit || 3;
+    
+    // Barra de XP visual
+    const xpProgress = Math.min(Math.floor(((xp % 500) / 500) * 10), 10);
+    const xpBar = '█'.repeat(xpProgress) + '░'.repeat(10 - xpProgress);
+    
+    const perfilText = `
+╔══════════════════╗
+     👤 PERFIL DO USUÁRIO 👤
+╚══════════════════╝
+
+📛 *Nick:* ${targetName}
+📞 *Número:* +${userNumber}
+
+📊 *ESTATÍSTICAS*
+➤ Mensagens: ${msgCount}
+➤ XP: ${xp} (Nível ${level})
+➤ Próximo nível: ${xpNextLevel} XP
+➤ [${xpBar}] ${Math.floor((xp % 500) / 5)}%
+➤ Gold: ${userGold} 💰
+
+🌍 *REGIÃO*
+➤ ${regiao}
+
+🏅 *CARGO*
+➤ ${cargoUser}
+
+⚠️ *ADVERTÊNCIAS*
+➤ ${userWarns.length}/${warnLimit}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`;
+
+    // Tentar enviar com foto de perfil
+    try {
+      const ppUrl = await sock.profilePictureUrl(targetUser, 'image').catch(() => null);
+      if (ppUrl) {
+        const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 10000 });
+        return await sock.sendMessage(groupId, {
+          image: Buffer.from(ppResp.data),
+          caption: perfilText,
+          mentions: [targetUser],
+        }, { quoted: message });
+      }
+    } catch {}
+    
+    return await sock.sendMessage(groupId, {
+      text: perfilText,
+      mentions: [targetUser],
+    }, { quoted: message });
+  }
 
   if (command === '#ping') {
     const start = Date.now();
     await reply('🏓 Pong!');
-    const latency = Date.now() - start;
-    return reply(`⚡ Latência: ${latency}ms`);
+    const end = Date.now();
+    return reply(`⚡ *Latência:* ${end - start}ms\n✅ Bot online e funcionando!`);
   }
 
   if (command === '#info') {
-    const uptime = process.uptime();
-    const hours = Math.floor(uptime / 3600);
-    const mins = Math.floor((uptime % 3600) / 60);
-    
-    return reply(`
-🤖 *SignaBOT - Informações*
+    return reply(`╔══════════════════╗
+     🤖 SIGNABOT INFO 🤖
+╚══════════════════╝
 
-📛 Nome: ${BOT_NAME}
-⏰ Uptime: ${hours}h ${mins}m
-🔧 Versão: 2.0.0
-👨‍💻 Dono: wa.me/${OWNER_NUMBER}
+🤖 *Nome:* ${BOT_NAME}
+📱 *Prefixos:* # / !
+⚙️ *Versão:* 2.0
+🌐 *Plataforma:* WhatsApp
 
-📊 *Estatísticas:*
-📦 Grupos ativos: ${Object.keys(subscriptions).length}
-📝 Comandos: 100+
-    `);
+📌 *Funcionalidades:*
+➤ Gerenciamento de grupos
+➤ Figurinhas e conversores
+➤ Downloads (YouTube/TikTok/Instagram)
+➤ Sistema de gold
+➤ Diversão e jogos
+➤ Sistema de assinatura
+
+💬 *Suporte:*
+➤ wa.me/${OWNER_NUMBER}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
   }
 
   if (command === '#dono') {
-    return reply(`👑 *Dono do Bot:*\n\n📱 wa.me/${OWNER_NUMBER}\n\n💬 Entre em contato para:\n• Adquirir plano\n• Reportar bugs\n• Sugestões`);
+    return reply(`╔══════════════════╗
+     👑 DONO DO BOT 👑
+╚══════════════════╝
+
+👤 *Dono:* SignaBot Owner
+📱 *Contato:* wa.me/${OWNER_NUMBER}
+💬 *Para contratar ou suporte:*
+➤ Acesse o link acima
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
   }
 
   if (command === '#sender') {
-    return reply(`📱 *Seu ID:*\n${sender}`);
+    return reply(`╔══════════════════╗
+     📱 SUAS INFOS 📱
+╚══════════════════╝
+
+👤 *Nome:* ${senderName}
+📞 *Número:* ${sender.split('@')[0]}
+🆔 *JID:* ${sender}
+${isGroup ? `👥 *Grupo:* ${groupId}` : '💬 *Chat privado*'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
   }
 
-  if (command === '#horario') {
-    const agora = new Date();
-    return reply(`🕐 *Horário Atual*\n\n📅 ${agora.toLocaleDateString('pt-BR')}\n⏰ ${agora.toLocaleTimeString('pt-BR')}`);
-  }
-
-  if (command === '#cep') {
-    if (!args[0]) return reply('❌ Use: #cep [CEP]');
-    try {
-      const { data } = await axios.get(`https://viacep.com.br/ws/${args[0].replace(/\D/g, '')}/json/`);
-      if (data.erro) return reply('❌ CEP não encontrado.');
-      return reply(`📍 *Consulta CEP*\n\n📫 CEP: ${data.cep}\n🏠 Rua: ${data.logradouro || '-'}\n🏘️ Bairro: ${data.bairro || '-'}\n🏙️ Cidade: ${data.localidade}\n🗺️ Estado: ${data.uf}`);
-    } catch { return reply('❌ Erro ao consultar CEP.'); }
-  }
-
-  if (command === '#clima') {
-    if (!args.length) return reply('❌ Use: #clima [cidade]');
-    try {
-      const city = encodeURIComponent(args.join(' '));
-      const { data } = await axios.get(`https://wttr.in/${city}?format=j1`, { timeout: 10000 });
-      const current = data.current_condition?.[0];
-      if (!current) return reply('❌ Cidade não encontrada.');
-      
-      return reply(`🌤️ *Clima em ${args.join(' ')}*\n\n🌡️ Temperatura: ${current.temp_C}°C\n🤔 Sensação: ${current.FeelsLikeC}°C\n💧 Umidade: ${current.humidity}%\n💨 Vento: ${current.windspeedKmph} km/h`);
-    } catch { return reply('❌ Erro ao buscar clima.'); }
-  }
+  // ===========================================================
+  // UTILIDADES - IMC / CALCULADORA / CEP / SIGNO / CLIMA / HORÁRIO / TRADUZIR
+  // ===========================================================
 
   if (command === '#imc') {
-    if (args.length < 2) return reply('❌ Use: #imc [peso] [altura]\nEx: #imc 70 1.75');
+    if (args.length < 2) return reply('❌ Use: #imc [peso em kg] [altura em m]\nEx: #imc 70 1.75');
     const peso = parseFloat(args[0].replace(',', '.'));
     const altura = parseFloat(args[1].replace(',', '.'));
-    if (isNaN(peso) || isNaN(altura)) return reply('❌ Valores inválidos.');
-    
+    if (isNaN(peso) || isNaN(altura) || altura <= 0) return reply('❌ Valores inválidos. Ex: #imc 70 1.75');
     const imc = peso / (altura * altura);
     let classificacao = '';
     if (imc < 18.5) classificacao = 'Abaixo do peso';
@@ -2012,100 +2748,1555 @@ Use:
     else if (imc < 30) classificacao = 'Sobrepeso';
     else if (imc < 35) classificacao = 'Obesidade grau I';
     else if (imc < 40) classificacao = 'Obesidade grau II';
-    else classificacao = 'Obesidade grau III';
-    
-    return reply(`📊 *Cálculo de IMC*\n\n⚖️ Peso: ${peso} kg\n📏 Altura: ${altura} m\n\n📈 IMC: ${imc.toFixed(2)}\n📋 Classificação: ${classificacao}`);
+    else classificacao = 'Obesidade grau III (mórbida)';
+    return reply(`*Cálculo de IMC*\n\n⚖️ Peso: ${peso}kg\n📏 Altura: ${altura}m\n📊 IMC: ${imc.toFixed(2)}\n🏷️ Classificação: ${classificacao}`);
   }
 
   if (command === '#calculadora' || command === '#calc') {
-    if (!args.length) return reply('❌ Use: #calculadora [expressão]\nEx: #calc 2+2*5');
+    if (!args.length) return reply('❌ Use: #calculadora [expressão]\nEx: #calculadora 2+2*3');
+    const expr = args.join(' ').replace(/[^0-9+\-*/().\s]/g, '');
     try {
-      const expr = args.join(' ').replace(/[^0-9+\-*/.()%\s]/g, '');
-      const result = eval(expr);
-      return reply(`🔢 *Calculadora*\n\n📝 ${expr}\n📊 = ${result}`);
-    } catch { return reply('❌ Expressão inválida.'); }
+      // eslint-disable-next-line no-new-func
+      const result = Function('"use strict"; return (' + expr + ')')();
+      return reply(`🧮 *Calculadora*\n\n📝 Expressão: ${expr}\n✅ Resultado: *${result}*`);
+    } catch {
+      return reply('❌ Expressão inválida. Use operadores: + - * /\nEx: #calculadora (5+3)*2');
+    }
+  }
+
+  if (command === '#cep') {
+    if (!args[0]) return reply('❌ Use: #cep [CEP]\nEx: #cep 01310100');
+    const cep = args[0].replace(/\D/g, '');
+    if (cep.length !== 8) return reply('❌ CEP inválido. Deve ter 8 dígitos.');
+    try {
+      const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`, { timeout: 10000 });
+      if (data.erro) return reply('❌ CEP não encontrado.');
+      return reply(`*Consulta de CEP*\n\n📮 CEP: ${data.cep}\n🏘️ Logradouro: ${data.logradouro || '-'}\n🏙️ Bairro: ${data.bairro || '-'}\n🌆 Cidade: ${data.localidade}\n🗺️ Estado: ${data.uf}\n🌎 Região: ${data.regiao || '-'}`);
+    } catch {
+      return reply('❌ Erro ao consultar CEP. Tente novamente.');
+    }
+  }
+
+  if (command === '#signo') {
+    if (!args[0]) return reply('❌ Use: #signo [DD/MM]\nEx: #signo 25/12');
+    const parts = args[0].split('/');
+    const dia = parseInt(parts[0]);
+    const mes = parseInt(parts[1]);
+    if (!dia || !mes || dia > 31 || mes > 12) return reply('❌ Data inválida. Use DD/MM');
+    const signos = [
+      { nome: 'Capricórnio', inicio: [12, 22], fim: [1, 19] },
+      { nome: 'Aquário', inicio: [1, 20], fim: [2, 18] },
+      { nome: 'Peixes', inicio: [2, 19], fim: [3, 20] },
+      { nome: 'Áries', inicio: [3, 21], fim: [4, 19] },
+      { nome: 'Touro', inicio: [4, 20], fim: [5, 20] },
+      { nome: 'Gêmeos', inicio: [5, 21], fim: [6, 20] },
+      { nome: 'Câncer', inicio: [6, 21], fim: [7, 22] },
+      { nome: 'Leão', inicio: [7, 23], fim: [8, 22] },
+      { nome: 'Virgem', inicio: [8, 23], fim: [9, 22] },
+      { nome: 'Libra', inicio: [9, 23], fim: [10, 22] },
+      { nome: 'Escorpião', inicio: [10, 23], fim: [11, 21] },
+      { nome: 'Sagitário', inicio: [11, 22], fim: [12, 21] },
+    ];
+    let signo = 'Capricórnio';
+    for (const s of signos) {
+      const [mi, di] = s.inicio;
+      const [mf, df] = s.fim;
+      if ((mes === mi && dia >= di) || (mes === mf && dia <= df)) { signo = s.nome; break; }
+    }
+    return reply(`*Seu Signo*\n\n📅 Data: ${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')}\n✨ Signo: *${signo}*`);
+  }
+
+  if (command === '#clima') {
+    if (!args.length) return reply('❌ Use: #clima [cidade]\nEx: #clima Manaus');
+    const city = encodeURIComponent(args.join(' '));
+    try {
+      const { data } = await axios.get(
+        `https://wttr.in/${city}?format=j1`,
+        { timeout: 10000 }
+      );
+      const current = data.current_condition?.[0];
+      const area = data.nearest_area?.[0];
+      if (!current) return reply('❌ Cidade não encontrada.');
+      const cityName = area?.areaName?.[0]?.value || args.join(' ');
+      const country = area?.country?.[0]?.value || '';
+      const temp = current.temp_C;
+      const feels = current.FeelsLikeC;
+      const desc = current.weatherDesc?.[0]?.value || '';
+      const humidity = current.humidity;
+      const wind = current.windspeedKmph;
+      return reply(`*Clima em ${cityName}, ${country}*\n\n🌡️ Temperatura: ${temp}°C\n🤔 Sensação: ${feels}°C\n☁️ Condição: ${desc}\n💧 Umidade: ${humidity}%\n💨 Vento: ${wind} km/h`);
+    } catch {
+      return reply('❌ Erro ao buscar clima. Verifique o nome da cidade.');
+    }
+  }
+
+  if (command === '#horario') {
+    const agora = new Date();
+    const dataFmt = agora.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const horaFmt = agora.toLocaleTimeString('pt-BR');
+    return reply(`*Horário Atual*\n\n📅 Data: ${dataFmt}\n🕐 Hora: ${horaFmt}\n🌐 Fuso: America/Sao_Paulo`);
   }
 
   if (command === '#traduzir' || command === '#tr') {
-    if (args.length < 2) return reply('❌ Use: #traduzir [idioma] [texto]\nIdiomas: en, es, fr, de, pt');
+    if (args.length < 2) return reply('❌ Use: #traduzir [idioma] [texto]\nIdiomas: en (inglês), es (espanhol), fr (francês), de (alemão), pt (português)\nEx: #traduzir en Olá mundo');
     const lang = args[0].toLowerCase();
     const text = args.slice(1).join(' ');
     try {
-      const { data } = await axios.get(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=pt|${lang}`, { timeout: 10000 });
+      const { data } = await axios.get(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=pt|${lang}`,
+        { timeout: 10000 }
+      );
       const translated = data?.responseData?.translatedText;
-      if (!translated) return reply('❌ Erro ao traduzir.');
-      return reply(`🌐 *Tradução*\n\n📝 Original: ${text}\n🔄 Traduzido (${lang}): ${translated}`);
-    } catch { return reply('❌ Erro ao traduzir.'); }
+      if (!translated || data.responseStatus !== 200) return reply('❌ Erro ao traduzir. Verifique o idioma e tente novamente.');
+      return reply(`*Tradução*\n\n📝 Original (pt): ${text}\n🌐 Traduzido (${lang}): ${translated}`);
+    } catch {
+      return reply('❌ Erro ao traduzir. Tente novamente mais tarde.');
+    }
+  }
+
+  // ===========================================================
+  // #SHIP - COMPATIBILIDADE ENTRE DOIS USUÁRIOS
+  // ===========================================================
+
+  if (command === '#ship') {
+    const mentioned = getMentioned(message);
+    if (mentioned.length < 2) return reply('❌ Use: #ship @usuario1 @usuario2');
+    const p1 = mentioned[0];
+    const p2 = mentioned[1];
+    const pct = Math.floor(Math.random() * 101);
+    let emoji = pct >= 80 ? '💕' : pct >= 60 ? '❤️' : pct >= 40 ? '💛' : pct >= 20 ? '💔' : '❌';
+    return sock.sendMessage(groupId, {
+      text: `*Compatibilidade de Casal*\n\n👤 @${p1.split('@')[0]}\n💞 x\n👤 @${p2.split('@')[0]}\n\n${emoji} Compatibilidade: *${pct}%*`,
+      mentions: [p1, p2],
+    });
+  }
+
+  // ===========================================================
+  // TECNOLOGIA - TODOS OS COMANDOS
+  // ===========================================================
+
+  if (command === '#testarnet' || command === '#velocidade') {
+    return reply(`
+╔══════════════════╗
+     🌐 TESTE DE VELOCIDADE 🌐
+╚══════════════════╝
+
+📡 *Como testar sua velocidade:*
+
+1️⃣ *Pelo navegador:*
+   ➤ Acesse: https://fast.com
+   ➤ Ou: https://speedtest.net
+   ➤ Clique em "Iniciar" e aguarde
+
+2️⃣ *Pelo celular:*
+   ➤ Baixe o app "Speedtest by Ookla"
+   ➤ Disponível na Play Store e App Store
+   ➤ Abra e toque em "Iniciar"
+
+3️⃣ *Entendendo os resultados:*
+   ➤ *Download:* Velocidade de recebimento
+   ➤ *Upload:* Velocidade de envio
+   ➤ *Ping:* Tempo de resposta (menor = melhor)
+   ➤ *Jitter:* Variação do ping
+
+4️⃣ *Velocidades ideais:*
+   ➤ Navegar: 5-10 Mbps
+   ➤ Streaming HD: 25 Mbps
+   ➤ Streaming 4K: 50 Mbps
+   ➤ Jogos online: 25+ Mbps, Ping < 50ms
+   ➤ Videochamada: 10 Mbps
+
+��� *Dica:* Teste conectado ao Wi-Fi E
+   aos dados móveis para comparar!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#siteseguro' || command === '#verificarlink') {
+    if (!args.length) return reply('❌ Use: #siteseguro [url]\nEx: #siteseguro https://google.com');
+    const url = args[0];
+    
+    let analise = [];
+    
+    // Verificações básicas de segurança
+    const isHttps = url.startsWith('https://');
+    analise.push(isHttps ? '✅ Usa HTTPS (conexão segura)' : '⚠️ NÃO usa HTTPS (conexão insegura!)');
+    
+    // Verificar domínios suspeitos
+    const suspiciousPatterns = [
+      /bit\.ly/i, /tinyurl/i, /goo\.gl/i, /t\.co/i, /is\.gd/i,
+      /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/, // IP direto
+      /free.*prize/i, /win.*money/i, /click.*here/i
+    ];
+    const isSuspicious = suspiciousPatterns.some(p => p.test(url));
+    analise.push(isSuspicious ? '⚠️ URL suspeita (encurtador ou padrão duvidoso)' : '✅ URL com formato normal');
+    
+    // Verificar extensão suspeita
+    const suspiciousExt = ['.exe', '.bat', '.cmd', '.scr', '.js', '.vbs', '.msi', '.apk'];
+    const hasSuspiciousExt = suspiciousExt.some(ext => url.toLowerCase().includes(ext));
+    analise.push(hasSuspiciousExt ? '🚨 CUIDADO! Link pode ser um arquivo executável!' : '✅ Não aponta para executável');
+    
+    // Verificar domínios conhecidos
+    const trustedDomains = ['google.com', 'youtube.com', 'facebook.com', 'instagram.com', 'twitter.com', 'github.com', 'microsoft.com', 'apple.com', 'amazon.com', 'netflix.com', 'whatsapp.com', 'wikipedia.org', 'linkedin.com'];
+    const isTrusted = trustedDomains.some(d => url.includes(d));
+    analise.push(isTrusted ? '✅ Domínio reconhecido e confiável' : 'ℹ️ Domínio não está na lista de conhecidos');
+    
+    // Verificar caracteres estranhos (homograph attack)
+    const hasWeirdChars = /[^\x00-\x7F]/.test(url);
+    analise.push(hasWeirdChars ? '🚨 ALERTA! Contém caracteres incomuns (possível phishing)' : '✅ Sem caracteres suspeitos');
+
+    // Score de segurança
+    let score = 50;
+    if (isHttps) score += 20;
+    if (!isSuspicious) score += 10;
+    if (!hasSuspiciousExt) score += 10;
+    if (isTrusted) score += 15;
+    if (!hasWeirdChars) score += 10;
+    if (!isHttps) score -= 20;
+    if (isSuspicious) score -= 15;
+    if (hasSuspiciousExt) score -= 25;
+    if (hasWeirdChars) score -= 20;
+    score = Math.max(0, Math.min(100, score));
+    
+    let status = score >= 80 ? '🟢 SEGURO' : score >= 50 ? '🟡 ATENÇÃO' : '🔴 PERIGOSO';
+
+    return reply(`
+╔══════════════════╗
+     🔒 ANÁLISE DE SEGURANÇA 🔒
+╚══════════════════╝
+
+🌐 *URL:* ${url}
+
+📊 *Score:* ${score}/100 — ${status}
+
+📋 *Análise:*
+${analise.join('\n')}
+
+🔍 *Para análise avançada:*
+➤ https://www.virustotal.com
+➤ https://transparencyreport.google.com
+➤ https://urlscan.io
+
+💡 *Dicas de segurança:*
+➤ Nunca clique em links desconhecidos
+➤ Verifique se tem cadeado (HTTPS)
+➤ Desconfie de ofertas muito boas
+➤ Não insira dados pessoais em sites duvidosos
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#senhasegura') {
+    if (!args.length) return reply('❌ Use: #senhasegura [sua senha]\nEx: #senhasegura MinhaSenh@123');
+    const senha = args.join(' ');
+    let score = 0;
+    let dicas = [];
+    
+    if (senha.length >= 8) { score += 20; } else { dicas.push('➤ Use pelo menos 8 caracteres'); }
+    if (senha.length >= 12) { score += 10; }
+    if (senha.length >= 16) { score += 10; }
+    if (/[a-z]/.test(senha)) { score += 10; } else { dicas.push('➤ Adicione letras minúsculas'); }
+    if (/[A-Z]/.test(senha)) { score += 15; } else { dicas.push('➤ Adicione letras MAIÚSCULAS'); }
+    if (/\d/.test(senha)) { score += 15; } else { dicas.push('➤ Adicione números'); }
+    if (/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(senha)) { score += 20; } else { dicas.push('➤ Adicione caracteres especiais (!@#$%)'); }
+    
+    // Penalidades
+    if (/^[0-9]+$/.test(senha)) { score -= 20; dicas.push('➤ Não use apenas números'); }
+    if (/(.)\1{2,}/.test(senha)) { score -= 10; dicas.push('➤ Evite caracteres repetidos (aaa, 111)'); }
+    if (/123|abc|qwerty|senha|password/i.test(senha)) { score -= 20; dicas.push('➤ Evite sequências comuns'); }
+    
+    score = Math.max(0, Math.min(100, score));
+    let nivel = score >= 80 ? '🟢 FORTE' : score >= 50 ? '🟡 MÉDIA' : '🔴 FRACA';
+
+    return reply(`
+╔══════════════════╗
+     🔐 ANÁLISE DE SENHA 🔐
+╚══════════════════╝
+
+📊 *Força:* ${score}/100 — ${nivel}
+📏 *Tamanho:* ${senha.length} caracteres
+
+${dicas.length ? '💡 *Sugestões de melhoria:*\n' + dicas.join('\n') : '✅ Sua senha está boa!'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
   }
 
   if (command === '#gerarsenha') {
     const tamanho = parseInt(args[0]) || 16;
-    if (tamanho < 6 || tamanho > 64) return reply('❌ Tamanho: 6-64 caracteres.');
+    if (tamanho < 6 || tamanho > 64) return reply('❌ Tamanho deve ser entre 6 e 64.');
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*()-_=+';
     let senha = '';
     for (let i = 0; i < tamanho; i++) {
       senha += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    return reply(`🔐 *Senha Gerada*\n\n\`\`\`${senha}\`\`\`\n\n📏 Tamanho: ${tamanho} caracteres`);
+    return reply(`
+╔══════════════════╗
+     🔑 GERADOR DE SENHA 🔑
+╚══════════════════╝
+
+🔐 *Sua senha gerada:*
+\`\`\`${senha}\`\`\`
+
+📏 Tamanho: ${tamanho} caracteres
+🛡️ Força: ALTA
+
+💡 *Dica:* Copie e salve em um
+   gerenciador de senhas!
+
+╔══════════════════╝
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#resetarmodem') {
+    return reply(`
+╔══════════════════╗
+     📡 RESETAR MODEM/ROTEADOR 📡
+╚══════════════════╝
+
+🔄 *Método 1 — Reset Simples:*
+1. Desligue o modem da tomada
+2. Aguarde 30 segundos
+3. Ligue novamente
+4. Espere 2-3 minutos para reconectar
+
+🔧 *Método 2 — Reset pelo Botão:*
+1. Encontre o botão "Reset" (geralmente atrás)
+2. Use um palito ou clipe
+3. Pressione e segure por 10 segundos
+4. Solte e aguarde reiniciar
+⚠️ AVISO: Isso apaga TODAS as configurações!
+
+💻 *Método 3 — Pelo Navegador:*
+1. Abra o navegador
+2. Digite: 192.168.0.1 ou 192.168.1.1
+3. Login padrão: admin / admin
+4. Vá em "Sistema" ou "Manutenção"
+5. Clique em "Reiniciar" ou "Restaurar"
+
+📞 *Senhas padrão dos modems:*
+➤ Vivo: admin / vivo12345
+➤ Claro: admin / gvt12345
+➤ Oi: admin / admin
+➤ NET: admin / admin ou NET_XXXX
+➤ TIM: admin / admin
+
+💡 *Dica:* Sempre anote suas configurações
+   de Wi-Fi ANTES de resetar!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#melhorarsinal') {
+    return reply(`
+╔══════════════════╗
+     📶 MELHORAR SINAL WI-FI 📶
+╚═════════════���════╝
+
+📍 *POSICIONAMENTO*
+➤ Coloque o roteador no centro da casa
+➤ Mantenha elevado (em cima de móvel)
+➤ Longe de paredes grossas e espelhos
+➤ Longe de micro-ondas e telefones
+
+📡 *CONFIGURAÇÕES*
+➤ Mude o canal do Wi-Fi (1, 6 ou 11)
+➤ Use banda 5GHz para perto do roteador
+➤ Use banda 2.4GHz para longe
+➤ Altere para canal menos congestionado
+
+🔧 *SOLUÇÕES*
+➤ Use repetidor/extensor de sinal
+➤ Use sistema Mesh para casas grandes
+➤ Powerline (internet pela tomada)
+➤ Cabo ethernet para dispositivos fixos
+
+📱 *NO CELULAR*
+➤ Esqueça a rede e reconecte
+➤ Desligue e ligue o Wi-Fi
+➤ Reinicie o celular
+➤ Limpe o cache de rede
+
+💡 *Dica:* Use o app "WiFi Analyzer"
+   para encontrar o melhor canal!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#meuip') {
+    try {
+      const { data } = await axios.get('https://api.ipify.org?format=json', { timeout: 10000 });
+      return reply(`
+╔══════════════════╗
+     🌐 SEU IP PÚBLICO 🌐
+╚══════════════════╝
+
+📡 *IP:* ${data.ip}
+
+💡 *O que é IP?*
+É o endereço do seu dispositivo
+na internet. Cada conexão tem um.
+
+⚠️ *Dica de segurança:*
+➤ Não compartilhe seu IP publicamente
+➤ Use VPN para proteger sua privacidade
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply('❌ Erro ao obter IP. Tente novamente.');
+    }
+  }
+
+  if (command === '#meudns') {
+    return reply(`
+╔══════════════════╗
+     🌐 CONFIGURAR DNS 🌐
+╚══════════════════╝
+
+📡 *DNS Recomendados:*
+
+☁️ *Cloudflare (mais rápido):*
+➤ Primário: 1.1.1.1
+➤ Secundário: 1.0.0.1
+
+🔍 *Google:*
+➤ Primário: 8.8.8.8
+➤ Secundário: 8.8.4.4
+
+🛡️ *OpenDNS (com filtro):*
+➤ Primário: 208.67.222.222
+➤ Secundário: 208.67.220.220
+
+👨‍👩‍👧 *AdGuard (bloqueia anúncios):*
+➤ Primário: 94.140.14.14
+➤ Secundário: 94.140.15.15
+
+📱 *Como configurar no Android:*
+1. Configurações > Wi-Fi
+2. Toque na sua rede > Avançado
+3. Mude DNS para "Estático"
+4. Insira os endereços acima
+
+💻 *Como configurar no PC:*
+1. Painel de Controle > Rede
+2. Propriedades do adaptador
+3. Protocolo IPv4 > Propriedades
+4. "Usar os seguintes endereços DNS"
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#pingtest') {
+    const host = args[0] || 'google.com';
+    try {
+      const start = Date.now();
+      await axios.get(`https://${host}`, { timeout: 10000 });
+      const ping = Date.now() - start;
+      let status = ping < 100 ? '🟢 Excelente' : ping < 300 ? '🟡 Bom' : '🔴 Lento';
+      return reply(`
+╔══════════════════╗
+     📡 PING TEST 📡
+╚══════════════════╝
+
+🌐 *Host:* ${host}
+⏱️ *Ping:* ${ping}ms
+📊 *Status:* ${status}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply(`❌ Não foi possível alcançar ${host}. Verifique o endereço.`);
+    }
+  }
+
+  if (command === '#limparcache') {
+    return reply(`
+╔══════════════════╗
+     🧹 LIMPAR CACHE 🧹
+╚══════════════════╝
+
+📱 *Android:*
+➤ Configurações > Armazenamento > Cache
+➤ Ou por app: Config > Apps > [App] > Limpar cache
+
+🍎 *iPhone:*
+➤ Safari: Ajustes > Safari > Limpar dados
+➤ Apps: Deletar e reinstalar o app
+
+💻 *Windows:*
+➤ Win+R > digite "temp" > deletar tudo
+➤ Win+R > digite "%temp%" > deletar tudo
+➤ Limpeza de Disco (cleanmgr)
+
+🌐 *Navegadores:*
+➤ Chrome: Ctrl+Shift+Del
+➤ Firefox: Ctrl+Shift+Del
+➤ Edge: Ctrl+Shift+Del
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#economizarbateria') {
+    return reply(`
+╔══════════════════╗
+     🔋 ECONOMIZAR BATERIA 🔋
+╚══════════════════╝
+
+📱 *Dicas essenciais:*
+➤ Reduza o brilho da tela
+➤ Ative o modo economia de energia
+➤ Desative GPS quando não usar
+➤ Desative Bluetooth e NFC
+➤ Use Wi-Fi ao invés de dados móveis
+➤ Feche apps em segundo plano
+➤ Desative atualizações automáticas
+➤ Use modo escuro (telas AMOLED)
+➤ Reduza o tempo de tela ligada
+➤ Desative assistente de voz
+
+⚡ *Apps que mais gastam:*
+➤ Redes sociais (Facebook, Instagram)
+➤ Jogos
+➤ Streaming de vídeo
+➤ GPS/Mapas
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#liberarmemoria') {
+    return reply(`
+╔══════════════════╗
+     💾 LIBERAR MEMÓRIA 💾
+╚══════════════════╝
+
+📱 *Android:*
+➤ Desinstale apps não usados
+➤ Limpe cache dos apps
+➤ Mova fotos para nuvem (Google Fotos)
+➤ Apague downloads antigos
+➤ Limpe conversas do WhatsApp
+➤ Use "Files by Google" para limpeza
+
+🍎 *iPhone:*
+➤ Ajustes > Geral > Armazenamento
+➤ Descarregue apps não usados
+➤ Limpe fotos e vídeos
+➤ Limpe anexos do WhatsApp/Telegram
+
+💻 *PC:*
+➤ Desinstale programas não usados
+➤ Use Limpeza de Disco
+➤ Mova arquivos para HD externo
+➤ Esvazie a lixeira regularmente
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#modoaviao') {
+    return reply(`
+╔══════════════════╗
+     ✈️ MODO AVIÃO — DICAS ✈️
+╚══════════════════╝
+
+📱 *Usos inteligentes:*
+
+1️⃣ *Carregar mais rápido*
+   Ative modo avião ao carregar e
+   o celular carrega até 2x mais rápido!
+
+2️⃣ *Resolver problemas de rede*
+   Sem sinal? Ative e desative o modo
+   avião — funciona como um reset!
+
+3️⃣ *Economizar bateria*
+   Em áreas sem sinal, ative para
+   evitar que o celular fique buscando rede.
+
+4️⃣ *Sem interrupções*
+   Perfeito para estudar, dormir ou
+   quando precisa de foco total.
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
   }
 
   if (command === '#dicatech') {
     const dicas = [
-      '💡 Ctrl+Shift+T reabre abas fechadas no navegador!',
-      '💡 *texto* para negrito, _texto_ para itálico no WhatsApp.',
+      '💡 Use Ctrl+Shift+T para reabrir abas fechadas no navegador!',
+      '💡 No Android, pressione e segure o botão de power 5x rapidamente para ligar para emergência.',
+      '💡 No WhatsApp, digite *texto* para negrito, _texto_ para itálico e ~texto~ para tachado.',
+      '💡 Ctrl+L seleciona toda a barra de endereço do navegador instantaneamente.',
+      '💡 Use o Google como calculadora: digite a conta direto na busca!',
+      '💡 Print Screen + Windows abre a ferramenta de recorte no Windows 11.',
+      '💡 No YouTube, pressione K para pausar, J para voltar 10s e L para avançar 10s.',
+      '💡 Digite "chrome://flags" no Chrome para acessar funções experimentais.',
+      '💡 No Android, fale "Ok Google, onde está meu celular?" de outro dispositivo para encontrá-lo.',
+      '💡 Ctrl+F permite buscar qualquer palavra em qualquer página ou documento.',
+      '💡 Use sites como haveibeenpwned.com para verificar se seu email já foi vazado.',
+      '💡 No WhatsApp Web, Ctrl+Shift+M muta uma conversa rapidamente.',
+      '💡 Alt+Tab alterna entre janelas abertas no Windows.',
+      '💡 No celular, sacudir o aparelho desfaz a última ação no iPhone.',
+      '💡 Use 2FA (autenticação em dois fatores) em TODAS as suas contas importantes!',
+      '💡 Ctrl+D salva a página atual nos favoritos do navegador.',
+      '💡 No Google Maps, segure um local para ver o trânsito em tempo real.',
+      '💡 Windows+V abre o histórico da área de transferência (clipboard).',
       '💡 Use DNS 1.1.1.1 (Cloudflare) para navegar mais rápido!',
-      '💡 Ctrl+L seleciona a barra de endereço instantaneamente.',
-      '💡 No YouTube: K pausa, J volta 10s, L avança 10s.',
-      '💡 Use 2FA em todas suas contas importantes!',
-      '💡 Windows+V abre o histórico da área de transferência.',
-      '💡 Modo avião faz o celular carregar mais rápido!',
-      '💡 Ctrl+F busca palavras em qualquer página.',
-      '💡 No WhatsApp Web, Ctrl+Shift+M muta conversa.'
+      '💡 No WhatsApp, envie uma mensagem para si mesmo — funciona como bloco de notas!',
     ];
     return reply(dicas[Math.floor(Math.random() * dicas.length)]);
   }
 
-  // Comando não reconhecido
-  return;
+  if (command === '#atalhos') {
+    const sistema = (args[0] || 'windows').toLowerCase();
+    
+    if (sistema === 'windows' || sistema === 'win') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ ATALHOS WINDOWS ⌨️
+╚══════════════════╝
+
+📋 *Básicos:*
+➤ Ctrl+C — Copiar
+➤ Ctrl+V — Colar
+➤ Ctrl+Z — Desfazer
+➤ Ctrl+A — Selecionar tudo
+➤ Ctrl+S — Salvar
+➤ Alt+F4 — Fechar janela
+
+🖥️ *Sistema:*
+➤ Win+E — Explorador de arquivos
+➤ Win+D — Mostrar desktop
+➤ Win+L — Bloquear PC
+➤ Win+I — Configurações
+➤ Win+V — Área de transferência
+➤ Win+PrintScreen — Captura de tela
+➤ Ctrl+Shift+Esc — Gerenciador de tarefas
+
+🌐 *Navegador:*
+➤ Ctrl+T — Nova aba
+➤ Ctrl+W — Fechar aba
+➤ Ctrl+Shift+T — Reabrir aba
+➤ Ctrl+L — Barra de endereço
+➤ F5 — Atualizar página
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+    
+    if (sistema === 'mac' || sistema === 'apple') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ ATALHOS MAC ⌨️
+╚══════════════════╝
+
+📋 *Básicos:*
+➤ Cmd+C — Copiar
+➤ Cmd+V — Colar
+➤ Cmd+Z — Desfazer
+➤ Cmd+A — Selecionar tudo
+➤ Cmd+S — Salvar
+➤ Cmd+Q — Fechar app
+
+🖥️ *Sistema:*
+➤ Cmd+Space — Spotlight
+➤ Cmd+Tab — Alternar apps
+➤ Cmd+Shift+3 — Screenshot
+➤ Cmd+Shift+4 — Screenshot parcial
+➤ Cmd+Option+Esc — Forçar saída
+
+╔���═════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+
+    if (sistema === 'android' || sistema === 'celular') {
+      return reply(`
+╔══════════════════╗
+     ⌨️ DICAS ANDROID ⌨️
+╚══════════════════╝
+
+📱 *Atalhos úteis:*
+➤ Power 2x — Abrir câmera
+➤ Power 5x — Emergência (SOS)
+➤ Vol- + Power — Screenshot
+➤ Segurar app — Atalhos rápidos
+➤ Arrastar 2 dedos — Painel rápido
+
+⚡ *Gestos:*
+➤ Deslizar de baixo — Voltar ao início
+➤ Deslizar do lado — Voltar
+➤ Deslizar de baixo + segurar — Apps recentes
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+
+    return reply('❌ Use: #atalhos [windows/mac/android]');
+  }
+
+  if (command === '#formatarpc') {
+    return reply(`
+╔══════════════════╗
+     💻 FORMATAR PC 💻
+╚══════════════════╝
+
+⚠️ *ANTES DE FORMATAR:*
+➤ Faça backup de TODOS os arquivos!
+➤ Salve senhas e favoritos
+➤ Anote drivers necessários
+➤ Tenha pendrive com Windows (8GB+)
+
+🔧 *Passo a passo:*
+1. Baixe a ISO do Windows em:
+   microsoft.com/software-download
+2. Use o "Media Creation Tool"
+3. Crie um pendrive bootável
+4. Reinicie o PC e acesse a BIOS
+   (F2, F12, Del ou Esc ao ligar)
+5. Coloque o pendrive como boot primário
+6. Siga as instruções de instalação
+7. Escolha "Instalação personalizada"
+8. Formate a partição desejada
+9. Instale o Windows
+
+📦 *Após formatar:*
+➤ Instale drivers (chipset, vídeo, rede)
+➤ Ative o Windows
+➤ Instale antivírus
+➤ Restaure seus backups
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#atualizardriver') {
+    return reply(`
+╔══════════════════╗
+     🔄 ATUALIZAR DRIVERS 🔄
+╚══════════════════╝
+
+💻 *Windows:*
+1. Win+X > Gerenciador de Dispositivos
+2. Clique com direito no dispositivo
+3. "Atualizar driver"
+4. "Pesquisar automaticamente"
+
+🎮 *Placa de Vídeo:*
+➤ NVIDIA: nvidia.com/drivers
+➤ AMD: amd.com/support
+➤ Intel: intel.com/drivers
+
+🔧 *Ferramentas automáticas:*
+➤ Driver Booster (IObit)
+➤ Snappy Driver Installer
+➤ Windows Update (mais seguro)
+
+⚠️ *Dicas:*
+➤ Crie ponto de restauração antes
+➤ Baixe drivers APENAS do site oficial
+➤ Nunca use sites de terceiros!
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+��══════════════════╝`);
+  }
+
+  if (command === '#vpn') {
+    return reply(`
+╔══════════════════╗
+     🛡️ VPN — O QUE É? 🛡️
+╚══════════════════╝
+
+❓ *O que é VPN?*
+➤ Rede Privada Virtual
+➤ Protege sua conexão criptografando
+➤ Esconde seu IP real
+➤ Permite acessar conteúdo de outros países
+
+📱 *VPNs Grátis Confiáveis:*
+➤ ProtonVPN (sem limite de dados)
+➤ Windscribe (10GB/mês)
+➤ Cloudflare WARP (1.1.1.1 app)
+
+💰 *VPNs Pagas (melhores):*
+➤ NordVPN
+➤ ExpressVPN
+➤ Surfshark
+➤ Mullvad
+
+⚠️ *Cuidado com:*
+➤ VPNs grátis desconhecidas
+➤ VPNs que pedem muitas permissões
+➤ VPNs sem política de no-log
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  if (command === '#whoisdominio') {
+    if (!args.length) return reply('❌ Use: #whoisdominio [domínio]\nEx: #whoisdominio google.com');
+    const dominio = args[0].replace(/https?:\/\//, '').split('/')[0];
+    try {
+      const { data } = await axios.get(`https://api.api-ninjas.com/v1/whois?domain=${encodeURIComponent(dominio)}`, {
+        timeout: 10000,
+        headers: { 'X-Api-Key': 'free' }
+      });
+      
+      return reply(`
+╔══════════════════╗
+     🌐 WHOIS — ${dominio} 🌐
+╚══════════════════╝
+
+📛 *Domínio:* ${data.domain_name || dominio}
+📅 *Criado em:* ${data.creation_date ? new Date(data.creation_date * 1000).toLocaleDateString('pt-BR') : 'N/D'}
+📅 *Expira em:* ${data.expiration_date ? new Date(data.expiration_date * 1000).toLocaleDateString('pt-BR') : 'N/D'}
+🏢 *Registrador:* ${data.registrar || 'N/D'}
+🌍 *DNS:* ${Array.isArray(data.name_servers) ? data.name_servers.slice(0, 3).join(', ') : 'N/D'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    } catch {
+      return reply(`
+╔══════════════════╗
+     🌐 WHOIS — ${dominio} 🌐
+╚══════════════════╝
+
+ℹ️ Não foi possível consultar o WHOIS.
+
+🔍 *Consulte manualmente:*
+➤ https://who.is/${dominio}
+➤ https://registro.br/tecnologia/ferramentas/whois/
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+    }
+  }
+
+  if (command === '#portacheck') {
+    const porta = parseInt(args[0]);
+    if (!porta || porta < 1 || porta > 65535) return reply('❌ Use: #portacheck [porta]\nEx: #portacheck 80\nPortas comuns: 80 (HTTP), 443 (HTTPS), 21 (FTP), 22 (SSH), 3306 (MySQL)');
+    
+    const portasConhecidas = {
+      20: 'FTP (dados)', 21: 'FTP (controle)', 22: 'SSH', 23: 'Telnet',
+      25: 'SMTP (email)', 53: 'DNS', 80: 'HTTP', 110: 'POP3',
+      143: 'IMAP', 443: 'HTTPS', 993: 'IMAPS', 995: 'POP3S',
+      3306: 'MySQL', 5432: 'PostgreSQL', 27017: 'MongoDB',
+      3389: 'Remote Desktop', 8080: 'HTTP Alternativo', 8443: 'HTTPS Alternativo'
+    };
+
+    return reply(`
+╔══════════════════╗
+     🔌 INFO DA PORTA ${porta} 🔌
+╚══════════════════╝
+
+🔢 *Porta:* ${porta}
+📋 *Serviço:* ${portasConhecidas[porta] || 'Desconhecido/Personalizado'}
+📊 *Tipo:* ${porta <= 1023 ? 'Bem conhecida (0-1023)' : porta <= 49151 ? 'Registrada (1024-49151)' : 'Dinâmica (49152-65535)'}
+
+🔍 *Verificar se está aberta:*
+➤ Use: https://www.yougetsignal.com/tools/open-ports/
+➤ Ou: https://canyouseeme.org
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`);
+  }
+
+  // ===========================================================
+  // COMANDOS PERSONALIZADOS — CRIAR / USAR / LISTAR / DELETAR
+  // ===========================================================
+
+  // !comando [nome] [texto] (pode incluir imagem na mensagem)
+  if (command === '#comando') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Apenas admins e mods podem criar comandos.');
+    
+    if (!args.length) return reply(`❌ Use: !comando [nome] [texto]\n\nVocê pode enviar com uma imagem para associar ao comando!\n\n📌 *Exemplos:*\n!comando saudacao Olá @user, bem-vindo!\n!comando regras Respeite todos!\n\n💡 *Variáveis disponíveis no texto:*\n@user — Menciona quem usou o comando\n@group — Nome do grupo\n@membros — Total de membros`);
+    
+    const cmdName = args[0].toLowerCase();
+
+    // Validar nome do comando
+    if (!/^[a-z0-9_-]+$/.test(cmdName)) {
+      return reply('❌ Nome do comando inválido! Use apenas letras, números, - e _\nEx: saudacao, regra_1, bem-vindo');
+    }
+
+    const cmdText = args.slice(1).join(' ');
+    
+    if (!cmdText && !message.message?.imageMessage) {
+      return reply('❌ Você precisa fornecer um texto e/ou imagem!\n\nUso: !comando [nome] [texto]\nOu envie uma imagem com a legenda: !comando [nome] [texto]');
+    }
+    
+    // Verificar se há imagem na mensagem
+    const imageMsg = message.message?.imageMessage;
+    let imageBuffer = null;
+    let imagePath = null;
+    
+    if (imageMsg) {
+      try {
+        imageBuffer = await downloadMedia(imageMsg, 'image');
+        if (imageBuffer) {
+          // Salvar a imagem no diretório de dados
+          const imgDir = path.join(DATA_DIR, 'cmd_images');
+          if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+          imagePath = path.join(imgDir, `${groupId.replace('@g.us', '')}_${cmdName}_${Date.now()}.jpg`);
+          // Redimensionar e otimizar imagem antes de salvar
+          await sharp(imageBuffer).resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toFile(imagePath);
+        }
+      } catch (err) {
+        console.log('[COMANDO] Erro ao salvar imagem:', err.message);
+        logBotError('cmd_save_image', err);
+      }
+    }
+    
+    // Salvar o comando
+    if (!customCmds[groupId]) customCmds[groupId] = {};
+    
+    // Se já existia um comando com esse nome e tinha imagem, deletar a imagem antiga
+    if (customCmds[groupId][cmdName] && customCmds[groupId][cmdName].imagePath) {
+      try { fs.unlinkSync(customCmds[groupId][cmdName].imagePath); } catch {}
+    }
+    
+    customCmds[groupId][cmdName] = {
+      text: cmdText || '',
+      imagePath: imagePath,
+      creator: sender,
+      creatorName: senderName,
+      createdAt: Date.now(),
+      useCount: customCmds[groupId][cmdName]?.useCount || 0 // manter contagem se existia
+    };
+    saveDB('customCmds', customCmds);
+    
+    let confirmMsg = `✅ Comando *!${cmdName}* criado com sucesso!\n\n`;
+    if (cmdText) confirmMsg += `📝 *Texto:* ${cmdText}\n`;
+    if (imagePath) confirmMsg += `🖼️ *Imagem:* Anexada\n`;
+    if (cmdText.includes('@user') || cmdText.includes('@group') || cmdText.includes('@membros')) {
+      confirmMsg += `\n🔄 *Variáveis detectadas* — serão substituídas ao usar o comando.`;
+    }
+    confirmMsg += `\n\n💡 Para usar: *!${cmdName}*`;
+    
+    return reply(confirmMsg);
+  }
+
+  // #vercomandos — Listar todos os comandos personalizados do grupo
+  if (command === '#vercomandos' || command === '#listacmd') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    
+    const cmds = customCmds[groupId];
+    if (!cmds || !Object.keys(cmds).length) {
+      return reply('📋 Nenhum comando personalizado criado neste grupo.\n\nUse *!comando [nome] [texto]* para criar!\nExemplo: !comando saudacao Olá @user!');
+    }
+    
+    const total = Object.keys(cmds).length;
+    let text = `
+╔══════════════════╗
+     📋 COMANDOS DO GRUPO 📋
+╚══════════════════╝
+
+📊 *Total:* ${total} comando(s)
+
+`;
+    Object.entries(cmds).forEach(([name, cmd], i) => {
+      const hasImg = cmd.imagePath ? '🖼️' : '📝';
+      const preview = cmd.text
+        ? (cmd.text.length > 45 ? cmd.text.substring(0, 45) + '...' : cmd.text)
+        : '(somente imagem)';
+      const uses = cmd.useCount || 0;
+      const creator = cmd.creatorName || cmd.creator?.split('@')[0] || 'N/A';
+      text += `${i + 1}. ${hasImg} *!${name}*\n   ➤ ${preview}\n   👤 ${creator} | 🔢 ${uses} uso(s)\n\n`;
+    });
+    
+    text += `*Para usar:* !nome_do_comando
+*Para deletar:* #delcomando [nome]
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝`;
+    
+    return reply(text);
+  }
+
+  // #delcomando — Deletar um comando personalizado
+  if (command === '#delcomando' || command === '#rmcmd') {
+    if (!isGroup) return reply('❌ Use em um grupo.');
+    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Apenas admins e mods podem deletar comandos.');
+    if (!args.length) return reply('❌ Use: #delcomando [nome]\nEx: #delcomando saudacao');
+    
+    const cmdName = args[0].toLowerCase();
+    
+    if (!customCmds[groupId] || !customCmds[groupId][cmdName]) {
+      return reply(`❌ Comando *!${cmdName}* não encontrado.\nUse #vercomandos para ver a lista.`);
+    }
+    
+    // Deletar imagem se existir
+    if (customCmds[groupId][cmdName].imagePath) {
+      try { fs.unlinkSync(customCmds[groupId][cmdName].imagePath); } catch {}
+    }
+    
+    delete customCmds[groupId][cmdName];
+    saveDB('customCmds', customCmds);
+    
+    return reply(`✅ Comando *!${cmdName}* deletado com sucesso!`);
+  }
+
+  // ===========================================================
+  // DOWNLOADS COM YT-DLP (YouTube, TikTok, Instagram, etc.)
+  // ===========================================================
+
+  // Helper: executa yt-dlp como Promise e retorna stdout
+  const ytdlp = (args) => new Promise((resolve, reject) => {
+    // Procurar yt-dlp no PATH ou em locais comuns
+    const bins = ['yt-dlp', './yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'];
+    const bin = bins.find(b => {
+      try { require('fs').accessSync(b); return true; } catch { return false; }
+    }) || 'yt-dlp';
+    execFile(bin, args, { maxBuffer: 50 * 1024 * 1024, timeout: 120000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout.trim());
+    });
+  });
+
+  // Helper: valida URL (YouTube, TikTok, Instagram, etc.)
+  const isValidMediaUrl = (url) => {
+    return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|facebook\.com)\//i.test(url);
+  };
+
+  // Helper: formata duração em mm:ss
+  const formatDuration = (seconds) => {
+    if (!seconds) return 'N/A';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Cache em memória simples: evita rebaixar o mesmo URL repetido
+  // { url+quality: { filePath, addedAt } }
+  if (!global._ytdlpCache) global._ytdlpCache = {};
+  const YTDLP_CACHE = global._ytdlpCache;
+  const YTDLP_CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+
+  const getCached = (key) => {
+    const entry = YTDLP_CACHE[key];
+    if (!entry) return null;
+    if (Date.now() - entry.addedAt > YTDLP_CACHE_TTL) { delete YTDLP_CACHE[key]; return null; }
+    if (!fs.existsSync(entry.filePath)) { delete YTDLP_CACHE[key]; return null; }
+    return entry.filePath;
+  };
+  const setCache = (key, filePath) => {
+    YTDLP_CACHE[key] = { filePath, addedAt: Date.now() };
+    // Limpar cache antigo automaticamente
+    for (const [k, v] of Object.entries(YTDLP_CACHE)) {
+      if (Date.now() - v.addedAt > YTDLP_CACHE_TTL) delete YTDLP_CACHE[k];
+    }
+  };
+
+  // ── #mp3 [url] — Baixar audio do YouTube/TikTok/etc. ──
+  if (command === '#mp3' || command === '#audio' || command === '#musica') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #mp3 [link]\nExemplo: #mp3 https://youtu.be/dQw4w9WgXcQ\n\nFunciona com: YouTube, TikTok, Instagram, Twitter/X');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!\nExemplo: #mp3 https://youtu.be/...');
+
+    const waitMsg = await sock.sendMessage(groupId || sender, {
+      text: '⏳ Baixando áudio, aguarde...',
+    }, { quoted: message });
+
+    const cacheKey = `mp3:${url}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        // Primeiro buscar info do vídeo
+        let info;
+        try {
+          const infoJson = await ytdlp([
+            '--dump-json', '--no-playlist',
+            '--socket-timeout', '30',
+            url
+          ]);
+          info = JSON.parse(infoJson);
+        } catch { info = null; }
+
+        // Verificar duração (limite de 15 minutos para audio)
+        if (info && info.duration && info.duration > 900) {
+          await sock.sendMessage(groupId || sender, { text: '❌ Vídeo muito longo! Limite: 15 minutos para #mp3.\nUse um vídeo mais curto.' }, { quoted: message });
+          return;
+        }
+
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `audio_${Date.now()}.mp3`);
+
+        await ytdlp([
+          '-x',
+          '--audio-format', 'mp3',
+          '--audio-quality', '128K',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const audioBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = audioBuffer.length / (1024 * 1024);
+
+      // WhatsApp limita envio a ~64MB
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB). Limite do WhatsApp: 60MB.`
+        }, { quoted: message });
+      }
+
+      // Tentar pegar título
+      let title = 'Audio';
+      try {
+        const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '15', url]);
+        const info2 = JSON.parse(infoJson);
+        title = info2.title || 'Audio';
+      } catch {}
+
+      await sock.sendMessage(groupId || sender, {
+        audio: audioBuffer,
+        mimetype: 'audio/mpeg',
+        fileName: `${title.substring(0, 50)}.mp3`,
+        ptt: false,
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[MP3] Erro:', err.message);
+      logBotError('mp3_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar áudio:\n${err.message}\n\nVerifique se o link é válido e tente novamente.`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ── #mp4 [url] [qualidade] — Baixar video ──
+  if (command === '#mp4' || command === '#video' || command === '#baixar') {
+    const url = args[0];
+    const qualityArg = args[1] || '480'; // padrão 480p para velocidade
+    if (!url) return reply('❌ Use: #mp4 [link] [qualidade]\nExemplos:\n#mp4 https://youtu.be/xxx\n#mp4 https://youtu.be/xxx 720\n\nQualidades: 240, 360, 480, 720\n\nFunciona com: YouTube, TikTok, Instagram, Twitter/X');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!');
+
+    const quality = ['240', '360', '480', '720'].includes(qualityArg) ? qualityArg : '480';
+
+    await sock.sendMessage(groupId || sender, {
+      text: `⏳ Baixando vídeo em ${quality}p, aguarde...`,
+    }, { quoted: message });
+
+    const cacheKey = `mp4:${url}:${quality}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        // Verificar duração (limite de 10 minutos para video)
+        let info;
+        try {
+          const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '30', url]);
+          info = JSON.parse(infoJson);
+        } catch { info = null; }
+
+        if (info && info.duration && info.duration > 600) {
+          await sock.sendMessage(groupId || sender, {
+            text: '❌ Vídeo muito longo! Limite: 10 minutos para #mp4.\nPara músicas longas use #mp3.'
+          }, { quoted: message });
+          return;
+        }
+
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `video_${Date.now()}.mp4`);
+
+        await ytdlp([
+          '--format', `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best`,
+          '--merge-output-format', 'mp4',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const videoBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = videoBuffer.length / (1024 * 1024);
+
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB). Tente uma qualidade menor:\n#mp4 ${url} 360`
+        }, { quoted: message });
+      }
+
+      let title = 'Video';
+      try {
+        const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '15', url]);
+        const info2 = JSON.parse(infoJson);
+        title = info2.title || 'Video';
+      } catch {}
+
+      await sock.sendMessage(groupId || sender, {
+        video: videoBuffer,
+        mimetype: 'video/mp4',
+        fileName: `${title.substring(0, 50)}.mp4`,
+        caption: `🎬 ${title.substring(0, 100)}`,
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[MP4] Erro:', err.message);
+      logBotError('mp4_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar vídeo:\n${err.message}\n\nTente uma qualidade menor: #mp4 ${url} 360`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ── #ytinfo [url] — Informações do vídeo sem baixar ──
+  if (command === '#ytinfo' || command === '#videoinfo') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #ytinfo [link]\nExemplo: #ytinfo https://youtu.be/dQw4w9WgXcQ');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!');
+
+    await reply('🔍 Buscando informações...');
+
+    try {
+      const infoJson = await ytdlp([
+        '--dump-json', '--no-playlist',
+        '--socket-timeout', '30',
+        url
+      ]);
+      const info = JSON.parse(infoJson);
+
+      const duration = formatDuration(info.duration);
+      const views = info.view_count ? info.view_count.toLocaleString('pt-BR') : 'N/A';
+      const likes = info.like_count ? info.like_count.toLocaleString('pt-BR') : 'N/A';
+      const uploadDate = info.upload_date
+        ? `${info.upload_date.substring(6,8)}/${info.upload_date.substring(4,6)}/${info.upload_date.substring(0,4)}`
+        : 'N/A';
+
+      const text = `
+*${info.title}*
+
+👤 Canal: ${info.uploader || info.channel || 'N/A'}
+⏱ Duração: ${duration}
+👁 Visualizações: ${views}
+👍 Curtidas: ${likes}
+📅 Data: ${uploadDate}
+🌐 Plataforma: ${info.extractor_key || info.extractor || 'N/A'}
+
+*Para baixar:*
+🎵 #mp3 ${url}
+🎬 #mp4 ${url}
+      `.trim();
+
+      // Enviar com thumbnail se disponível
+      if (info.thumbnail) {
+        try {
+          const thumbResp = await axios.get(info.thumbnail, { responseType: 'arraybuffer', timeout: 8000 });
+          await sock.sendMessage(groupId || sender, {
+            image: Buffer.from(thumbResp.data),
+            caption: text,
+          }, { quoted: message });
+          return;
+        } catch {}
+      }
+      await reply(text);
+    } catch (err) {
+      console.log('[YTINFO] Erro:', err.message);
+      logBotError('ytinfo', err);
+      await reply(`❌ Não foi possível obter informações.\n${err.message}`);
+    }
+    return;
+  }
+
+  // ── #tiktok [url] — Download TikTok sem marca d'água ──
+  if (command === '#tiktok' || command === '#tk') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #tiktok [link]\nExemplo: #tiktok https://vm.tiktok.com/...\n\nBaixa o vídeo sem marca d\'água!');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido do TikTok!');
+
+    await sock.sendMessage(groupId || sender, {
+      text: '⏳ Baixando TikTok sem marca d\'água...',
+    }, { quoted: message });
+
+    const cacheKey = `tiktok:${url}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `tiktok_${Date.now()}.mp4`);
+
+        await ytdlp([
+          '--format', 'best',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          // Flag para remover marca d'água do TikTok quando disponível
+          '--extractor-args', 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const videoBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = videoBuffer.length / (1024 * 1024);
+
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB).`
+        }, { quoted: message });
+      }
+
+      await sock.sendMessage(groupId || sender, {
+        video: videoBuffer,
+        mimetype: 'video/mp4',
+        caption: '🎵 TikTok baixado!',
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[TIKTOK] Erro:', err.message);
+      logBotError('tiktok_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar TikTok:\n${err.message}`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ===========================================================
+  // EXECUTAR COMANDOS PERSONALIZADOS (verifica se existe)
+  // ===========================================================
+  
+  if (isGroup && customCmds[groupId]) {
+    const cmdName = command.substring(1); // Remove o # do início
+    const cmd = customCmds[groupId][cmdName];
+    
+    if (cmd) {
+      try {
+        // Substituir variáveis no texto do comando
+        let cmdText = cmd.text || '';
+        if (cmdText) {
+          try {
+            const meta = await sock.groupMetadata(groupId);
+            cmdText = replaceVars(cmdText, {
+              user: `@${sender.split('@')[0]}`,
+              group: meta.subject || groupId,
+              membros: String(meta.participants.length),
+            });
+          } catch {}
+        }
+
+        // Incrementar contador de uso
+        customCmds[groupId][cmdName].useCount = (customCmds[groupId][cmdName].useCount || 0) + 1;
+        saveDB('customCmds', customCmds);
+
+        // Se tem imagem e texto
+        if (cmd.imagePath && fs.existsSync(cmd.imagePath)) {
+          const imgBuffer = fs.readFileSync(cmd.imagePath);
+          await sock.sendMessage(groupId, {
+            image: imgBuffer,
+            caption: cmdText || '',
+            mentions: cmdText.includes(`@${sender.split('@')[0]}`) ? [sender] : []
+          }, { quoted: message });
+        } else if (cmdText) {
+          // Só texto — mencionar usuário se @user foi usado
+          await sock.sendMessage(groupId, {
+            text: cmdText,
+            mentions: cmdText.includes(`@${sender.split('@')[0]}`) ? [sender] : []
+          }, { quoted: message });
+        }
+        return;
+      } catch (err) {
+        console.log('[CMD PERSONALIZADO] Erro:', err.message);
+        logBotError('custom_cmd_exec', err);
+        return reply('❌ Erro ao executar o comando personalizado.');
+      }
+    }
+  }
+
+  // ===========================================================
+  // COMANDO NAO ENCONTRADO (apenas se comecar com # ou /)
+  // ===========================================================
+
+  if (command.startsWith('#')) {
+    return reply('Comando nao encontrado. Use #menu para ver os comandos disponiveis.');
+  }
 };
 
 // ============================================================
-// CONEXÃO DO BOT
+// HANDLER DE EVENTOS DO GRUPO
 // ============================================================
 
+const handleGroupEvents = async (sock, events) => {
+  if (!events['groups.update']) return;
+};
+
+// Checar horarios de abertura/fechamento automatico
+const checkScheduledTimes = async (sock) => {
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  for (const [groupId, settings] of Object.entries(groupSettings)) {
+    // Abrir grupo
+    if (settings.openAt === timeStr) {
+      try {
+        await sock.groupSettingUpdate(groupId, 'not_announcement');
+        await sock.sendMessage(groupId, { text: 'O grupo abriu automaticamente! Bom dia a todos!' });
+      } catch {}
+    }
+    // Fechar grupo
+    if (settings.closeAt === timeStr) {
+      try {
+        await sock.groupSettingUpdate(groupId, 'announcement');
+        await sock.sendMessage(groupId, { text: 'O grupo fechou automaticamente. Ate amanha!' });
+      } catch {}
+    }
+    // Mensagens automaticas
+    const msgs = autoMessages[groupId];
+    if (msgs && msgs.length) {
+      for (const m of msgs) {
+        if (m.time === timeStr) {
+          try { await sock.sendMessage(groupId, { text: m.text }); } catch {}
+        }
+      }
+    }
+  }
+};
+
+// Checar aniversarios do dia
+const checkBirthdays = async (sock) => {
+  const now = new Date();
+  const day = now.getDate();
+  const month = now.getMonth() + 1;
+  const hour = now.getHours();
+  if (hour !== 9) return; // Enviar as 9h
+
+  for (const [groupId, members] of Object.entries(birthdays)) {
+    for (const [userId, b] of Object.entries(members)) {
+      if (b.day === day && b.month === month) {
+        try {
+          await sock.sendMessage(groupId, {
+            text: `Hoje e aniversario de @${userId.split('@')[0]}!\n\nParabens, ${b.name}! Que seu dia seja especial!`,
+            mentions: [userId],
+          });
+        } catch {}
+      }
+    }
+  }
+};
+
+// ============================================================
+// CONECTAR BOT
+// ============================================================
+
+const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
+
+const clearSession = () => {
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+      console.log('[SignaBot] Sessao removida com sucesso.');
+    }
+  } catch (e) { console.log('[SignaBot] Erro ao remover sessao: ' + e.message); }
+};
+
+let fatal405Count = 0;
+let reconnectAttempts = 0;
+
 const connectBot = async () => {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,
     auth: state,
-    browser: ['SignaBot', 'Chrome', '120.0.0'],
+    browser: ['SignaBot', 'Safari', '604.1'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,
+    retryRequestDelayMs: 3000,
+    maxMsgRetryCount: 3,
+    emitOwnEvents: false,
+    fireInitQueries: true,
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  let reconnectAttempts = 0;
-  let fatal405Count = 0;
+  // Agendamentos - verificar a cada 1 minuto
+  const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
+  const birthdayInterval = setInterval(() => checkBirthdays(sock), 3600000);
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
     if (qr) {
-      console.log('[SignaBot] Escaneie o QR Code:');
+      fatal405Count = 0;
+      console.log('\n==============================');
+      console.log('  Escaneie o QR Code abaixo   ');
+      console.log('==============================\n');
       qrcode.generate(qr, { small: true });
+      console.log('\n==============================\n');
     }
 
     if (connection === 'close') {
-      const reason = lastDisconnect?.error;
-      const boom = reason instanceof Boom ? reason : null;
-      const statusCode = boom?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      clearInterval(scheduleInterval);
+      clearInterval(birthdayInterval);
 
-      console.log(`[SignaBot] Conexão fechada. Código: ${statusCode}. Reconectar: ${shouldReconnect}`);
+      const statusCode = (lastDisconnect?.error instanceof Boom)
+        ? lastDisconnect.error.output.statusCode : 0;
 
-      if (!shouldReconnect) {
-        console.log('[SignaBot] Sessão encerrada. Delete a pasta auth_info e reconecte.');
+      console.log('[SignaBot] Conexao fechada. Codigo: ' + statusCode);
+
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 440) {
+        console.log('[SignaBot] Sessao encerrada. Limpando e gerando novo QR em 10s...');
+        clearSession();
         reconnectAttempts = 0;
         fatal405Count = 0;
         setTimeout(() => connectBot(), 10000);
@@ -2115,11 +4306,12 @@ const connectBot = async () => {
       if (statusCode === 405 || statusCode === 403) {
         fatal405Count++;
         if (fatal405Count >= 3) {
-          console.log('[SignaBot] IP bloqueado. Aguardando 10 minutos...');
+          console.log('[SignaBot] IP bloqueado temporariamente. Aguardando 10 minutos...');
           fatal405Count = 0;
           setTimeout(() => connectBot(), 10 * 60 * 1000);
         } else {
           const delay = fatal405Count * 60000;
+          console.log(`[SignaBot] Erro 405 (#${fatal405Count}). Aguardando ${delay / 1000}s...`);
           setTimeout(() => connectBot(), delay);
         }
         return;
@@ -2127,6 +4319,7 @@ const connectBot = async () => {
 
       const delay = Math.min(5000 * Math.pow(2, reconnectAttempts), 60000);
       reconnectAttempts++;
+      console.log(`[SignaBot] Tentativa ${reconnectAttempts} — reconectando em ${delay / 1000}s...`);
       setTimeout(() => connectBot(), delay);
 
     } else if (connection === 'open') {
@@ -2155,6 +4348,7 @@ const connectBot = async () => {
         const sender = message.key.participant || message.key.remoteJid;
         const isGroup = groupId.endsWith('@g.us');
 
+        // Ignorar lista negra
         if (blacklist[sender]) {
           if (isGroup) {
             try { await sock.groupParticipantsUpdate(groupId, [sender], 'remove'); } catch {}
@@ -2162,35 +4356,41 @@ const connectBot = async () => {
           continue;
         }
 
+        // Registrar atividade
         if (isGroup) logActivity(groupId, sender);
 
+        // Verificar se membro esta mutado
         if (isGroup && muted[groupId]?.includes(sender)) {
-          try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
+          try {
+            await sock.sendMessage(groupId, { delete: message.key });
+          } catch {}
           continue;
         }
 
         const settings = isGroup ? getGroupSettings(groupId) : {};
 
-        // Trial automático
+        // ========== INICIAR TESTE GRÁTIS AUTOMATICAMENTE ==========
+        // Só ativa se o grupo E o número do remetente nunca tiveram trial ou assinatura antes
         if (isGroup && !subscriptions[groupId] && !blacklist[sender]) {
           const senderNum = sender.split('@')[0];
           if (!groupOrNumberHasHistory(groupId, senderNum)) {
             subscriptions[groupId] = {
               type: 'trial',
               activatedAt: Date.now(),
-              expiresAt: Date.now() + (10 * 60 * 1000),
+              expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutos
               notified: false
             };
             saveDB('subscriptions', subscriptions);
+            // Registrar no histórico para impedir nova ativação
             markGroupHistory(groupId, 'trial', senderNum);
             
             await sock.sendMessage(groupId, {
-              text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApos o teste, entre em contato:\nwa.me/${OWNER_NUMBER}`,
+              text: `🎉 *Teste Grátis Ativado!*\n\n⏰ Duração: 10 minutos\n\nApós o teste, o bot será bloqueado até que o dono ative a assinatura com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
             });
           }
         }
 
-        // Obter texto
+        // Obter texto da mensagem
         const msgType = Object.keys(message.message)[0];
         let body = '';
 
@@ -2203,6 +4403,7 @@ const connectBot = async () => {
         } else if (msgType === 'videoMessage') {
           body = message.message.videoMessage.caption || '';
         } else if (msgType === 'viewOnceMessage') {
+          // Revelar view-once se ativado
           if (isGroup && settings.antiViewOnce) {
             try {
               const inner = message.message.viewOnceMessage.message;
@@ -2213,7 +4414,7 @@ const connectBot = async () => {
               if (buffer) {
                 await sock.sendMessage(groupId, {
                   [mediaType]: buffer,
-                  caption: `👁️ Visualização única de @${sender.split('@')[0]} revelada:`,
+                  caption: `Mensagem visualizacao unica de @${sender.split('@')[0]} revelada:`,
                 }, { mentions: [sender] });
               }
             } catch {}
@@ -2221,28 +4422,81 @@ const connectBot = async () => {
           continue;
         }
 
-        // Antilink
+        // ANTILINK
         if (isGroup && settings.antilink && body) {
           const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
           const urls = body.match(urlRegex);
           if (urls) {
-            const allowed = settings.antilinkAllow || [];
+            const allowed = settings.antilinkAllow || ['instagram.com', 'youtube.com', 'youtu.be', 'tiktok.com'];
             const hasBlocked = urls.some(url => !allowed.some(a => url.includes(a)));
             if (hasBlocked) {
               const isAdminSender = await isAdmin(sock, groupId, sender);
               if (!isAdminSender && !isOwner(sender)) {
                 try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
                 await sock.sendMessage(groupId, {
-                  text: `⚠️ @${sender.split('@')[0]}, links não são permitidos!`,
+                  text: `@${sender.split('@')[0]}, links nao sao permitidos neste grupo!`,
                   mentions: [sender],
                 });
+
+                // Avisar se mandar link pro bot no privado
                 continue;
+              }
+            }
+
+            // Auto-baixar links de YouTube/TikTok/Instagram
+            if (settings.autoBaixar) {
+              for (const url of urls) {
+                if (url.includes('youtu')) {
+                  try {
+                    let audioUrl = null;
+                    const ytApis = [
+                      async () => { const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(url)}&type=audio`, { timeout: 25000 }); return data?.url || null; },
+                      async () => { const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(url)}`, { timeout: 25000 }); return data?.data?.url || data?.url || null; },
+                    ];
+                    for (const fn of ytApis) { try { audioUrl = await fn(); if (audioUrl) break; } catch {} }
+                    if (audioUrl) {
+                      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                      await sock.sendMessage(groupId, { audio: Buffer.from(audioResp.data), mimetype: 'audio/mpeg', ptt: false }, { quoted: message });
+                    }
+                  } catch {}
+                }
+                if (url.includes('tiktok')) {
+                  try {
+                    let videoUrl = null;
+                    const ttApis = [
+                      async () => { const { data } = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`, { timeout: 15000 }); return data?.video?.noWatermark || data?.video?.no_wm || null; },
+                      async () => { const { data } = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 15000 }); return data?.data?.play || null; },
+                    ];
+                    for (const fn of ttApis) { try { videoUrl = await fn(); if (videoUrl) break; } catch {} }
+                    if (videoUrl) {
+                      const resp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                      await sock.sendMessage(groupId, { video: Buffer.from(resp.data) }, { quoted: message });
+                    }
+                  } catch {}
+                }
+                if (url.includes('instagram.com')) {
+                  try {
+                    let mediaUrl = null;
+                    let isVideo = false;
+                    const igApis = [
+                      async () => { const { data } = await axios.get(`https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 }); return data?.url ? { mediaUrl: data.url, isVideo: data.type === 'video' } : null; },
+                      async () => { const { data } = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 }); const link = data?.data?.[0]?.url || data?.url; return link ? { mediaUrl: link, isVideo: link.includes('.mp4') } : null; },
+                    ];
+                    for (const fn of igApis) { try { const r = await fn(); if (r?.mediaUrl) { mediaUrl = r.mediaUrl; isVideo = r.isVideo; break; } } catch {} }
+                    if (mediaUrl) {
+                      const resp = await axios.get(mediaUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                      const buf = Buffer.from(resp.data);
+                      if (isVideo) await sock.sendMessage(groupId, { video: buf, caption: 'Instagram' }, { quoted: message });
+                      else await sock.sendMessage(groupId, { image: buf, caption: 'Instagram' }, { quoted: message });
+                    }
+                  } catch {}
+                }
               }
             }
           }
         }
 
-        // Anti palavrões
+        // FILTRO DE PALAVROES
         if (isGroup && settings.antiPalavra && body && settings.palavroes?.length) {
           const lower = body.toLowerCase();
           const found = settings.palavroes.find(p => lower.includes(p));
@@ -2251,7 +4505,7 @@ const connectBot = async () => {
             if (!isAdminSender && !isOwner(sender)) {
               try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
               await sock.sendMessage(groupId, {
-                text: `⚠️ @${sender.split('@')[0]}, palavrões não são permitidos!`,
+                text: `@${sender.split('@')[0]}, palavroes nao sao permitidos!`,
                 mentions: [sender],
               });
               continue;
@@ -2259,13 +4513,31 @@ const connectBot = async () => {
           }
         }
 
-        // Anti vendas
+        // ANTI VENDAS - Detecta mensagens de venda e deleta
         if (isGroup && settings.antiVendas && body) {
+          // Padrões de detecção de vendas
           const vendasPatterns = [
-            /R\$\s*\d+/i, /\d+[.,]\d{2}\s*(reais|real)/i, /vendo\b/i, /vende-se/i,
-            /à venda/i, /compre\s+(já|agora|aqui)/i, /promoção/i, /oferta\s+(imperdível|especial)/i,
-            /por\s+apenas\s+R?\$?\s*\d+/i, /pix\s+.*\d+/i, /entrega\s+(grátis|gratuita)/i,
-            /frete\s+(grátis|gratuita|free)/i, /link\s+(na\s+)?bio/i, /chama\s+(no\s+)?(pv|privado|inbox|dm)/i,
+            /R\$\s*\d+/i,                          // R$ seguido de número (R$10, R$ 50, etc.)
+            /\d+[.,]\d{2}\s*(reais|real)/i,         // 10,00 reais / 50.00 real
+            /\d+\s*(reais|real)/i,                   // 10 reais / 50 real
+            /vendo\b/i,                              // "vendo"
+            /vende-se/i,                             // "vende-se"
+            /à venda/i,                              // "à venda"
+            /a venda/i,                              // "a venda"
+            /compre\s+(já|agora|aqui)/i,             // "compre já/agora/aqui"
+            /promoção/i,                             // "promoção"
+            /promo[çc][aã]o/i,                       // "promoçao" (sem acento)
+            /oferta\s+(imperdível|especial|relâmpago)/i, // "oferta imperdível/especial"
+            /por\s+apenas\s+R?\$?\s*\d+/i,           // "por apenas R$10"
+            /pix\s+.*\d+/i,                          // "pix" seguido de valor
+            /entrega\s+(grátis|gratuita|gratis)/i,   // "entrega grátis"
+            /frete\s+(grátis|gratuita|gratis|free)/i,// "frete grátis"
+            /link\s+(na\s+)?bio/i,                   // "link na bio"
+            /chama\s+(no\s+)?(pv|privado|inbox|dm)/i,// "chama no pv/privado"
+            /interessados?\s+(chama|inbox|pv|dm|privado)/i, // "interessados chama"
+            /vendas?\s+(pelo|por|via|no)\s+(whatsapp|whats|zap|insta)/i, // "vendas pelo whatsapp"
+            /tabela\s+de\s+pre[çc]os?/i,             // "tabela de preços"
+            /valores?\s+(no|pelo|via)\s+(pv|privado|inbox|dm)/i, // "valores no pv"
           ];
           
           const isVenda = vendasPatterns.some(pattern => pattern.test(body));
@@ -2273,17 +4545,32 @@ const connectBot = async () => {
           if (isVenda) {
             const isAdminSender = await isAdmin(sock, groupId, sender);
             if (!isAdminSender && !isOwner(sender)) {
+              // Deletar a mensagem de venda
               try { await sock.sendMessage(groupId, { delete: message.key }); } catch {}
-              await sock.sendMessage(groupId, {
-                text: `🚫 @${sender.split('@')[0]}, mensagens de venda não são permitidas!\n\nUse #anunciar para anúncios oficiais.`,
-                mentions: [sender],
-              });
+              
+              // Buscar os admins do grupo para mencionar
+              try {
+                const meta = await sock.groupMetadata(groupId);
+                const admins = meta.participants.filter(p => p.admin);
+                const adminMentions = admins.map(a => a.id);
+                const adminTags = admins.map(a => `@${a.id.split('@')[0]}`).join(' ');
+                
+                await sock.sendMessage(groupId, {
+                  text: `🚫 *ANTI VENDAS*\n\n⚠️ O usuário @${sender.split('@')[0]} enviou uma mensagem de venda e foi deletada!\n\n👮 Admins: ${adminTags}`,
+                  mentions: [sender, ...adminMentions],
+                });
+              } catch {
+                await sock.sendMessage(groupId, {
+                  text: `🚫 *ANTI VENDAS*\n\n⚠️ O usuário @${sender.split('@')[0]} enviou uma mensagem de venda e foi deletada!`,
+                  mentions: [sender],
+                });
+              }
               continue;
             }
           }
         }
 
-        // Só admins
+        // SO-ADM
         if (isGroup && settings.soAdm && body) {
           const isAdminSender = await isAdmin(sock, groupId, sender);
           if (!isAdminSender && !isOwner(sender) && !hasCargo(groupId, sender, 'admin', 'mod', 'aux')) {
@@ -2292,130 +4579,129 @@ const connectBot = async () => {
           }
         }
 
-        // Verificar AFK
+        // VERIFICAR AFK (se mencionar alguem que esta ausente)
         if (isGroup && body) {
           const mentioned = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           for (const uid of mentioned) {
             if (afkList[uid]) {
               const afk = afkList[uid];
               await sock.sendMessage(groupId, {
-                text: `💤 @${uid.split('@')[0]} está ausente: "${afk.msg}"`,
+                text: `@${uid.split('@')[0]} esta ausente: "${afk.msg}" (ha ${formatTime(Date.now() - afk.time)})`,
                 mentions: [uid],
               });
             }
           }
+          // Se o proprio usuario que estava ausente mandou mensagem, remover AFK
           if (afkList[sender]) {
             const afk = afkList[sender];
             delete afkList[sender];
             saveDB('afkList', afkList);
             await sock.sendMessage(groupId, {
-              text: `👋 @${sender.split('@')[0]} voltou! (ausente por ${formatTime(Date.now() - afk.time)})`,
+              text: `@${sender.split('@')[0]} voltou da ausencia! (ficou ausente por ${formatTime(Date.now() - afk.time)})`,
               mentions: [sender],
             });
           }
         }
 
-        // ============================================================
-        // MENSAGEM PRIVADA — CONFIGURAÇÃO PROFISSIONAL
-        // ============================================================
+        // ===========================================================
+        // MENSAGEM PRIVADA — DETECTAR ADMIN E CONFIGURAR GRUPOS
+        // ===========================================================
         if (!isGroup) {
           const privateSender = sender;
           const privateReply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
           const ownerPrivate = isOwner(privateSender);
           
+          // Verificar se o usuário está em um fluxo de configuração
           if (!privateConfig[privateSender]) {
             privateConfig[privateSender] = { step: 'idle', selectedGroup: null };
           }
           
           const pConfig = privateConfig[privateSender];
 
-          // Menu de configuração do grupo
+          // ─────────────────────────────────────────────────────
+          // HELPER: Gera o menu principal de configuração do grupo
+          // ─────────────────────────────────────────────────────
           const buildConfigMenu = (gId, gName) => {
             const s = getGroupSettings(gId);
             const sub = checkSubscription(gId);
             const subInfo = sub.active
-              ? `✅ Ativa | Expira: ${formatTime(sub.expiresAt - Date.now())}`
+              ? `✅ Ativa | Expira em: ${formatTime(sub.expiresAt - Date.now())}`
               : '❌ Inativa';
             
+            // Contar comandos personalizados
             const cmdCount = customCmds[gId] ? Object.keys(customCmds[gId]).length : 0;
+            
+            // Contar mensagens agendadas
             const schedCount = autoMessages[gId] ? Object.keys(autoMessages[gId]).length : 0;
-            const productCount = shop[gId] ? Object.keys(shop[gId]).length : 0;
 
             let menu = `
-╔═══════════════════════════════╗
-   ⚙️ *PAINEL DE CONFIGURAÇÃO*
-╚═══════════════════════════════╝
+╔══════════════════════════╗
+  ⚙️ *${gName}*
+╚══════════════════════════╝
 
-📍 *Grupo:* ${gName}
 📊 *Assinatura:* ${subInfo}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔧 *FUNÇÕES* (envie o número)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1️⃣ Antilink         ${s.antilink ? '✅' : '❌'}
-2️⃣ Bem-vindo        ${s.welcome ? '✅' : '❌'}
-3️⃣ Anti Palavrão    ${s.antiPalavra ? '✅' : '❌'}
-4️⃣ Anti Vendas      ${s.antiVendas ? '✅' : '❌'}
-5️⃣ Só Admin         ${s.soAdm ? '✅' : '❌'}
-6️⃣ Anti View Once   ${s.antiViewOnce ? '✅' : '❌'}
-7️⃣ Loja             ${s.shopEnabled !== false ? '✅' : '❌'}
+━━━ *FUNÇÕES* ━━━━━━━━━━━━
+1️⃣ Antilink: ${s.antilink ? '✅' : '❌'}
+2️⃣ Bem-vindo: ${s.welcome ? '✅' : '❌'}
+3️⃣ Anti Palavrão: ${s.antiPalavra ? '✅' : '❌'}
+4️⃣ Anti Vendas: ${s.antiVendas ? '✅' : '❌'}
+5️⃣ Anti Call: ${s.anticall ? '✅' : '❌'}
+6️⃣ Só Admin: ${s.soAdm ? '✅' : '❌'}
+7️⃣ Anti View Once: ${s.antiViewOnce ? '✅' : '❌'}
+8️⃣ Auto Baixar: ${s.autoBaixar ? '✅' : '❌'}
+9️⃣ Anti Spam: ${s.antiSpam ? '✅' : '❌'}
+🔟 Anti Imagem: ${s.antiImg ? '✅' : '❌'}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📝 *MENSAGENS*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-➤ *bemvindo* [msg] — Texto boas-vindas
+━━━ *TEXTOS* ━━━━━━━━━━━━━
+➤ *bemvindo* [msg] — Texto de boas-vindas
+   Atual: ${s.welcomeMsg ? s.welcomeMsg.substring(0, 50) + '...' : 'Padrão'}
 ➤ *saida* [msg] — Texto de saída
+   Atual: ${s.leaveMsg ? s.leaveMsg.substring(0, 50) + '...' : 'Padrão'}
 ➤ *regras* [texto] — Definir regras
+   Atual: ${rules[gId] ? 'Definido' : 'Não definido'}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ⏰ *AGENDAMENTOS*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ *HORÁRIOS* ━━━━━━━━━━━
+➤ *abrir* HH:MM — Abrir grupo
+   Atual: ${s.openAt || 'Não definido'}
+➤ *fechar* HH:MM — Fechar grupo
+   Atual: ${s.closeAt || 'Não definido'}
+
+━━━ *COMANDOS PERSONALIZADOS* ━━━
+📝 Total: ${cmdCount} comando(s)
+➤ *vercmd* — Ver comandos do grupo
+➤ *addcmd* [nome] [texto] — Criar comando
+➤ *delcmd* [nome] — Deletar comando
+
+━━━ *MENSAGENS AGENDADAS* ━━━━
 📅 Total: ${schedCount} agendamento(s)
 ➤ *veragenda* — Ver agendamentos
-➤ *agenda* [tempo] [texto]
-   Ex: agenda 30m Lembrete
-   Ex: agenda 2h Bom dia
-   Ex: agenda 08:00 Msg diária
-➤ *delagenda* [id]
+➤ *agenda* HH:MM [texto] — Agendar msg
+➤ *delagenda* [id] — Remover agendamento
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🛒 *LOJA*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 Produtos: ${productCount}
-➤ *anunciar* [nome] | [preço] | [desc]
-➤ *verprodutos* — Ver produtos
-➤ *delproduto* [id]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📋 *COMANDOS PERSONALIZADOS*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 Total: ${cmdCount} comando(s)
-➤ *vercmd* — Ver comandos
-➤ *addcmd* [nome] [texto]
-➤ *delcmd* [nome]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔀 *NAVEGAÇÃO*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━ *NAVEGAÇÃO* ━━━━━━━━━━`;
 
             if (ownerPrivate) {
               menu += `
 ➤ *plano* — Gerenciar assinatura
-➤ *stats* — Estatísticas`;
+➤ *logs* — Ver logs de erros do bot
+➤ *stats* — Estatísticas do grupo`;
             }
 
             menu += `
 ➤ *trocar* — Mudar de grupo
-➤ *menu* — Exibir este menu
-➤ *sair* — Encerrar
+➤ *menu* — Exibir este menu novamente
+➤ *sair* — Encerrar configuração
 
-╔═══════════════════════════════╗
-        ⚡ *SignaBOT* v2.0 ⚡
-╚═══════════════════════════════╝`;
+╔══════════════════════════╗
+        ⚡ *SignaBOT* ⚡
+╚══════════════════════════╝`;
             return menu;
           };
           
-          // Seleção de grupo
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Sele��ão de grupo (resposta numérica)
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'awaiting_group_selection' && /^\d+$/.test(body.trim())) {
             const idx = parseInt(body.trim()) - 1;
             const groups = pConfig.adminGroups || [];
@@ -2427,382 +4713,545 @@ const connectBot = async () => {
               pConfig.selectedGroupName = selectedGroup.name;
               saveDB('privateConfig', privateConfig);
               
+              logBotAction('private_config', `${privateSender} selecionou grupo ${selectedGroup.name}`);
               await privateReply(buildConfigMenu(selectedGroup.id, selectedGroup.name));
               continue;
             } else {
-              await privateReply('❌ Opção inválida. Envie o número do grupo.');
+              await privateReply('Opcao invalida. Envie o numero correspondente ao grupo.');
               continue;
             }
           }
           
-          // Modo configuração ativo
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Modo de configuração ativo
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'configuring' && pConfig.selectedGroup) {
             const input = body.trim().toLowerCase();
-            const rawInput = body.trim();
+            const rawInput = body.trim(); // Preservar formatação original
             const selectedGroupId = pConfig.selectedGroup;
             const selectedGroupName = pConfig.selectedGroupName || 'Grupo';
             const settings = getGroupSettings(selectedGroupId);
             
+            // === SAIR ===
             if (input === 'sair' || input === 'exit') {
               pConfig.step = 'idle';
               pConfig.selectedGroup = null;
               saveDB('privateConfig', privateConfig);
-              await privateReply('✅ Configuração encerrada!');
+              await privateReply('Configuracao encerrada! Envie qualquer mensagem para iniciar novamente.');
               continue;
             }
             
+            // === MENU (reexibir) ===
             if (input === 'menu') {
               await privateReply(buildConfigMenu(selectedGroupId, selectedGroupName));
               continue;
             }
             
-            if (input === 'trocar') {
+            // === TROCAR DE GRUPO ===
+            if (input === 'trocar' || input === 'mudar') {
               pConfig.step = 'idle';
               pConfig.selectedGroup = null;
               saveDB('privateConfig', privateConfig);
+              // Cai no fluxo de detecção de admin abaixo
             }
             
-            // Toggle funções
-            const toggleMap = {
-              '1': { key: 'antilink', name: 'Antilink' },
-              '2': { key: 'welcome', name: 'Bem-vindo' },
-              '3': { key: 'antiPalavra', name: 'Anti Palavrão' },
-              '4': { key: 'antiVendas', name: 'Anti Vendas' },
-              '5': { key: 'soAdm', name: 'Só Admin' },
-              '6': { key: 'antiViewOnce', name: 'Anti View Once' },
-              '7': { key: 'shopEnabled', name: 'Loja' },
-            };
-            
-            if (toggleMap[input]) {
-              const opt = toggleMap[input];
-              settings[opt.key] = !settings[opt.key];
-              saveSettings();
-              const status = settings[opt.key] ? '✅ ATIVADO' : '❌ DESATIVADO';
-              await privateReply(`${opt.name}: ${status}`);
-              continue;
-            }
-            
-            // Boas-vindas
-            if (input.startsWith('bemvindo ')) {
-              const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
-              settings.welcomeMsg = msg;
-              saveSettings();
-              await privateReply(`✅ Mensagem de boas-vindas definida:\n\n${msg}`);
-              continue;
-            }
-            
-            // Saída
-            if (input.startsWith('saida ')) {
-              const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
-              settings.leaveMsg = msg;
-              saveSettings();
-              await privateReply(`✅ Mensagem de saída definida:\n\n${msg}`);
-              continue;
-            }
-            
-            // Regras
-            if (input.startsWith('regras ')) {
-              const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
-              rules[selectedGroupId] = msg;
-              saveDB('rules', rules);
-              await privateReply(`✅ Regras definidas:\n\n${msg}`);
-              continue;
-            }
-            
-            // Ver comandos
-            if (input === 'vercmd') {
-              const cmds = customCmds[selectedGroupId];
-              if (!cmds || !Object.keys(cmds).length) {
-                await privateReply('📋 Nenhum comando personalizado.');
-                continue;
-              }
-              let text = `*📋 Comandos — ${selectedGroupName}:*\n\n`;
-              Object.entries(cmds).forEach(([name, cmd], i) => {
-                const hasImg = cmd.imagePath ? '📷' : '';
-                const preview = cmd.text ? cmd.text.substring(0, 30) + '...' : '';
-                text += `${i + 1}. #${name} ${hasImg} ${preview}\n`;
-              });
-              await privateReply(text);
-              continue;
-            }
-            
-            // Adicionar comando
-            if (input.startsWith('addcmd ')) {
-              const parts = rawInput.substring(7).split(/\s+/);
-              const cmdName = parts[0]?.toLowerCase();
-              const cmdText = parts.slice(1).join(' ');
-              if (!cmdName || !cmdText) {
-                await privateReply('❌ Use: addcmd [nome] [texto]');
-                continue;
-              }
-              if (!customCmds[selectedGroupId]) customCmds[selectedGroupId] = {};
-              customCmds[selectedGroupId][cmdName] = {
-                text: cmdText,
-                imagePath: null,
-                creator: privateSender,
-                createdAt: Date.now()
+            // === TOGGLE FUNÇÕES (1-10) ===
+            else {
+              const toggleMap = {
+                '1': { key: 'antilink', name: 'Antilink' },
+                '2': { key: 'welcome', name: 'Bem-vindo' },
+                '3': { key: 'antiPalavra', name: 'Anti Palavrao' },
+                '4': { key: 'antiVendas', name: 'Anti Vendas' },
+                '5': { key: 'anticall', name: 'Anti Call' },
+                '6': { key: 'soAdm', name: 'So Admin' },
+                '7': { key: 'antiViewOnce', name: 'Anti View Once' },
+                '8': { key: 'autoBaixar', name: 'Auto Baixar' },
+                '9': { key: 'antiSpam', name: 'Anti Spam' },
+                '10': { key: 'antiImg', name: 'Anti Imagem' },
               };
-              saveDB('customCmds', customCmds);
-              await privateReply(`✅ Comando #${cmdName} criado!`);
-              continue;
-            }
-            
-            // Deletar comando
-            if (input.startsWith('delcmd ')) {
-              const cmdName = input.replace('delcmd ', '').trim();
-              if (!customCmds[selectedGroupId]?.[cmdName]) {
-                await privateReply('❌ Comando não encontrado.');
+              
+              if (toggleMap[input]) {
+                const opt = toggleMap[input];
+                settings[opt.key] = !settings[opt.key];
+                saveSettings();
+                logBotAction('toggle_setting', `${opt.name} = ${settings[opt.key]} em ${selectedGroupName}`);
+                
+                const status = settings[opt.key] ? 'ATIVADO' : 'DESATIVADO';
+                await privateReply(`${opt.name}: ${status}\n\nEnvie outro numero ou *menu* para ver opcoes.`);
                 continue;
               }
-              if (customCmds[selectedGroupId][cmdName].imagePath) {
-                try { fs.unlinkSync(customCmds[selectedGroupId][cmdName].imagePath); } catch {}
-              }
-              delete customCmds[selectedGroupId][cmdName];
-              saveDB('customCmds', customCmds);
-              await privateReply(`✅ Comando #${cmdName} deletado!`);
-              continue;
-            }
-            
-            // Ver agendamentos
-            if (input === 'veragenda') {
-              const scheds = autoMessages[selectedGroupId];
-              if (!scheds || !Object.keys(scheds).length) {
-                await privateReply('📅 Nenhum agendamento.');
-                continue;
-              }
-              let text = `*📅 Agendamentos — ${selectedGroupName}:*\n\n`;
-              Object.entries(scheds).forEach(([id, s], i) => {
-                const preview = s.text.substring(0, 40) + '...';
-                if (s.type === 'once') {
-                  text += `${i + 1}. ${id}\n   ⏰ ${new Date(s.executeAt).toLocaleString('pt-BR')}\n   📝 ${preview}\n\n`;
-                } else {
-                  text += `${i + 1}. ${id}\n   ⏰ ${s.time} | Dias: ${s.days}\n   📝 ${preview}\n\n`;
+              
+              // === HORÁRIO DE ABERTURA ===
+              if (input.startsWith('abrir ')) {
+                const time = input.replace('abrir ', '').trim();
+                if (/^\d{2}:\d{2}$/.test(time)) {
+                  settings.openAt = time;
+                  saveSettings();
+                  logBotAction('set_open', `${selectedGroupName} abrir as ${time}`);
+                  await privateReply(`Grupo vai abrir automaticamente as ${time}`);
+                  continue;
                 }
-              });
-              await privateReply(text);
-              continue;
-            }
-            
-            // Agendar mensagem
-            if (input.startsWith('agenda ')) {
-              const parts = rawInput.substring(7).trim();
-              const firstSpace = parts.indexOf(' ');
-              if (firstSpace === -1) {
-                await privateReply('❌ Use: agenda [tempo] [texto]\nEx: agenda 30m Lembrete');
+                await privateReply('Formato invalido. Use: abrir HH:MM (ex: abrir 08:00)');
                 continue;
               }
               
-              const timeArg = parts.substring(0, firstSpace).toLowerCase();
-              const msgText = parts.substring(firstSpace + 1);
-              
-              let scheduleType = '';
-              let executeAt = 0;
-              let repeatTime = null;
-              let repeatDays = 'todos';
-              
-              if (timeArg.endsWith('m') && /^\d+m$/.test(timeArg)) {
-                const minutes = parseInt(timeArg.replace('m', ''));
-                scheduleType = 'once';
-                executeAt = Date.now() + (minutes * 60 * 1000);
-              } else if (timeArg.endsWith('h') && /^\d+h$/.test(timeArg)) {
-                const hours = parseInt(timeArg.replace('h', ''));
-                scheduleType = 'once';
-                executeAt = Date.now() + (hours * 60 * 60 * 1000);
-              } else if (/^\d{2}:\d{2}$/.test(timeArg)) {
-                scheduleType = 'daily';
-                repeatTime = timeArg;
-              } else {
-                await privateReply('❌ Formato inválido. Use: 30m, 2h ou 08:00');
+              // === HORÁRIO DE FECHAMENTO ===
+              if (input.startsWith('fechar ')) {
+                const time = input.replace('fechar ', '').trim();
+                if (/^\d{2}:\d{2}$/.test(time)) {
+                  settings.closeAt = time;
+                  saveSettings();
+                  logBotAction('set_close', `${selectedGroupName} fechar as ${time}`);
+                  await privateReply(`Grupo vai fechar automaticamente as ${time}`);
+                  continue;
+                }
+                await privateReply('Formato invalido. Use: fechar HH:MM (ex: fechar 22:00)');
                 continue;
               }
               
-              const schedId = 'SCH_' + Date.now().toString(36).toUpperCase();
-              if (!autoMessages[selectedGroupId]) autoMessages[selectedGroupId] = {};
-              autoMessages[selectedGroupId][schedId] = {
-                type: scheduleType,
-                time: repeatTime,
-                executeAt,
-                days: repeatDays,
-                text: msgText,
-                active: true,
-                creator: privateSender,
-                createdAt: Date.now()
-              };
-              saveDB('autoMessages', autoMessages);
-              
-              let confirmMsg = `✅ Agendado!\n\n🆔 ${schedId}\n`;
-              if (scheduleType === 'once') {
-                confirmMsg += `⏰ ${new Date(executeAt).toLocaleString('pt-BR')}`;
-              } else {
-                confirmMsg += `⏰ ${repeatTime} (diário)`;
-              }
-              
-              await privateReply(confirmMsg);
-              continue;
-            }
-            
-            // Deletar agendamento
-            if (input.startsWith('delagenda ')) {
-              const schedId = input.replace('delagenda ', '').trim().toUpperCase();
-              if (!autoMessages[selectedGroupId]?.[schedId]) {
-                await privateReply('❌ Agendamento não encontrado.');
-                continue;
-              }
-              delete autoMessages[selectedGroupId][schedId];
-              saveDB('autoMessages', autoMessages);
-              await privateReply(`✅ Agendamento ${schedId} removido!`);
-              continue;
-            }
-            
-            // Anunciar produto (pelo privado)
-            if (input.startsWith('anunciar ')) {
-              const content = rawInput.substring(9);
-              const parts = content.split('|').map(p => p.trim());
-              
-              if (parts.length < 2) {
-                await privateReply('❌ Use: anunciar [nome] | [preço] | [descrição]');
+              // === MENSAGEM DE BOAS-VINDAS ===
+              if (input.startsWith('bemvindo ') || input.startsWith('bemvindo\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1); // Preservar formato
+                settings.welcomeMsg = msg;
+                saveSettings();
+                logBotAction('set_welcome', `Boas-vindas em ${selectedGroupName}`);
+                await privateReply(`Mensagem de boas-vindas definida:\n\n${msg}\n\n*Variáveis disponíveis (use @var ou {var}):*\n@user ou {user} ou {nome} — Menciona o membro\n@group ou {group} ou {grupo} — Nome do grupo\n@desc ou {desc} — Descrição do grupo\n@numero ou {numero} — Número formatado (+55 XX 9XXXX-XXXX)\n@membros ou {membros} ou {total} — Total de membros`);
                 continue;
               }
               
-              const productId = 'PRD_' + Date.now().toString(36).toUpperCase();
-              if (!shop[selectedGroupId]) shop[selectedGroupId] = {};
-              shop[selectedGroupId][productId] = {
-                name: parts[0] || 'Sem nome',
-                price: parts[1] || 'Sob consulta',
-                description: parts[2] || '',
-                imagePath: null,
-                seller: privateSender,
-                sellerName: message.pushName || privateSender.split('@')[0],
-                createdAt: Date.now()
-              };
-              saveDB('shop', shop);
+              // === MENSAGEM DE SAÍDA ===
+              if (input.startsWith('saida ') || input.startsWith('saida\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
+                settings.leaveMsg = msg;
+                saveSettings();
+                logBotAction('set_leave', `Saida em ${selectedGroupName}`);
+                await privateReply(`Mensagem de saida definida:\n\n${msg}`);
+                continue;
+              }
               
-              await privateReply(`✅ Produto anunciado!\n\n🆔 ${productId}\n📦 ${parts[0]}\n💰 ${parts[1]}\n\nO anúncio será exibido no grupo.`);
+              // === DEFINIR REGRAS ===
+              if (input.startsWith('regras ') || input.startsWith('regras\n')) {
+                const msg = rawInput.substring(rawInput.indexOf(' ') + 1);
+                rules[selectedGroupId] = msg;
+                saveDB('rules', rules);
+                logBotAction('set_rules', `Regras em ${selectedGroupName}`);
+                await privateReply(`Regras do grupo definidas:\n\n${msg}`);
+                continue;
+              }
               
-              // Enviar anúncio no grupo
-              const anuncio = `
+              // === VER COMANDOS PERSONALIZADOS ===
+              if (input === 'vercmd' || input === 'vercomandos') {
+                const cmds = customCmds[selectedGroupId];
+                if (!cmds || !Object.keys(cmds).length) {
+                  await privateReply('Nenhum comando personalizado neste grupo.\n\nUse: addcmd [nome] [texto]');
+                  continue;
+                }
+                let text = `*Comandos personalizados — ${selectedGroupName}:*\n\n`;
+                Object.entries(cmds).forEach(([name, cmd], i) => {
+                  const hasImg = cmd.imagePath ? '[IMG]' : '';
+                  const preview = cmd.text ? (cmd.text.length > 40 ? cmd.text.substring(0, 40) + '...' : cmd.text) : '(somente imagem)';
+                  const creator = cmd.creator ? cmd.creator.split('@')[0] : 'N/A';
+                  const date = cmd.createdAt ? new Date(cmd.createdAt).toLocaleDateString('pt-BR') : 'N/A';
+                  text += `${i + 1}. *!${name}* ${hasImg}\n   ${preview}\n   Criado por: ${creator} em ${date}\n\n`;
+                });
+                text += 'Para deletar: delcmd [nome]';
+                await privateReply(text);
+                continue;
+              }
+              
+              // === CRIAR COMANDO PERSONALIZADO (pelo privado) ===
+              if (input.startsWith('addcmd ')) {
+                const parts = rawInput.substring(7).split(/\s+/);
+                const cmdName = parts[0]?.toLowerCase();
+                const cmdText = parts.slice(1).join(' ');
+                if (!cmdName || !cmdText) {
+                  await privateReply('Use: addcmd [nome] [texto]\nEx: addcmd saudacao Ola pessoal!');
+                  continue;
+                }
+                if (!customCmds[selectedGroupId]) customCmds[selectedGroupId] = {};
+                customCmds[selectedGroupId][cmdName] = {
+                  text: cmdText,
+                  imagePath: null,
+                  creator: privateSender,
+                  createdAt: Date.now()
+                };
+                saveDB('customCmds', customCmds);
+                logBotAction('addcmd_private', `!${cmdName} em ${selectedGroupName}`);
+                await privateReply(`Comando *!${cmdName}* criado!\nTexto: ${cmdText}\n\nPara imagem, crie pelo grupo com !comando`);
+                continue;
+              }
+              
+              // === DELETAR COMANDO PERSONALIZADO ===
+              if (input.startsWith('delcmd ')) {
+                const cmdName = input.replace('delcmd ', '').trim().toLowerCase();
+                if (!customCmds[selectedGroupId] || !customCmds[selectedGroupId][cmdName]) {
+                  await privateReply(`Comando *!${cmdName}* nao encontrado.\nUse *vercmd* para ver a lista.`);
+                  continue;
+                }
+                if (customCmds[selectedGroupId][cmdName].imagePath) {
+                  try { fs.unlinkSync(customCmds[selectedGroupId][cmdName].imagePath); } catch {}
+                }
+                delete customCmds[selectedGroupId][cmdName];
+                saveDB('customCmds', customCmds);
+                logBotAction('delcmd_private', `!${cmdName} em ${selectedGroupName}`);
+                await privateReply(`Comando *!${cmdName}* deletado!`);
+                continue;
+              }
+              
+              // === VER AGENDAMENTOS ===
+              if (input === 'veragenda' || input === 'agendamentos') {
+                const scheds = autoMessages[selectedGroupId];
+                if (!scheds || !Object.keys(scheds).length) {
+                  await privateReply('Nenhuma mensagem agendada neste grupo.\n\nUse: agenda HH:MM [texto]');
+                  continue;
+                }
+                let text = `*Mensagens agendadas — ${selectedGroupName}:*\n\n`;
+                Object.entries(scheds).forEach(([id, sched], i) => {
+                  const preview = sched.text ? (sched.text.length > 50 ? sched.text.substring(0, 50) + '...' : sched.text) : 'Sem texto';
+                  text += `*${i + 1}.* ID: ${id}\n   Horario: ${sched.time}\n   Dias: ${sched.days || 'Todos'}\n   Texto: ${preview}\n   Status: ${sched.active !== false ? 'Ativo' : 'Pausado'}\n\n`;
+                });
+                text += 'Para remover: delagenda [id]';
+                await privateReply(text);
+                continue;
+              }
+              
+              // === AGENDAR MENSAGEM ===
+              if (input.startsWith('agenda ')) {
+                const parts = rawInput.substring(7).trim();
+                const timeMatch = parts.match(/^(\d{2}:\d{2})\s+(.+)/s);
+                if (!timeMatch) {
+                  await privateReply('Use: agenda HH:MM [texto]\nEx: agenda 08:00 Bom dia pessoal!\n\nOpcoes avancadas:\nagenda 08:00 seg,qua,sex Bom dia!');
+                  continue;
+                }
+                const time = timeMatch[1];
+                let msgContent = timeMatch[2];
+                let days = 'todos';
+                
+                // Verificar se tem dias específicos
+                const daysMatch = msgContent.match(/^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*\s+/i);
+                if (daysMatch) {
+                  days = daysMatch[0].trim().toLowerCase();
+                  msgContent = msgContent.substring(daysMatch[0].length);
+                }
+                
+                const schedId = 'sch_' + Date.now().toString(36);
+                if (!autoMessages[selectedGroupId]) autoMessages[selectedGroupId] = {};
+                autoMessages[selectedGroupId][schedId] = {
+                  time,
+                  text: msgContent,
+                  days,
+                  active: true,
+                  creator: privateSender,
+                  createdAt: Date.now()
+                };
+                saveDB('autoMessages', autoMessages);
+                logBotAction('schedule_private', `${schedId} as ${time} em ${selectedGroupName}`);
+                await privateReply(`Mensagem agendada!\n\nID: ${schedId}\nHorario: ${time}\nDias: ${days}\nTexto: ${msgContent}`);
+                continue;
+              }
+              
+              // === REMOVER AGENDAMENTO ===
+              if (input.startsWith('delagenda ')) {
+                const schedId = input.replace('delagenda ', '').trim();
+                if (!autoMessages[selectedGroupId] || !autoMessages[selectedGroupId][schedId]) {
+                  await privateReply(`Agendamento *${schedId}* nao encontrado.\nUse *veragenda* para ver a lista.`);
+                  continue;
+                }
+                delete autoMessages[selectedGroupId][schedId];
+                saveDB('autoMessages', autoMessages);
+                logBotAction('del_schedule', `${schedId} em ${selectedGroupName}`);
+                await privateReply(`Agendamento *${schedId}* removido!`);
+                continue;
+              }
+              
+              // ============================================
+              // DONO: GERENCIAR PLANO / ASSINATURA
+              // ============================================
+              if (input === 'plano' && ownerPrivate) {
+                const sub = checkSubscription(selectedGroupId);
+                const subData = subscriptions[selectedGroupId];
+                let text = `
 ╔══════════════════════════╗
-   🏷️ *ANÚNCIO ESPECIAL* 🏷️
+  *ASSINATURA — ${selectedGroupName}*
 ╚══════════════════════════╝
 
-🛍️ *${parts[0]}*
-💰 *Preço:* ${parts[1]}
-
-📝 ${parts[2] || 'Sem descrição'}
-
-👤 *Vendedor:* @${privateSender.split('@')[0]}
-🆔 ${productId}
-
+`;
+                if (sub.active) {
+                  const expDate = new Date(sub.expiresAt).toLocaleDateString('pt-BR');
+                  const expTime = new Date(sub.expiresAt).toLocaleTimeString('pt-BR');
+                  const restante = formatTime(sub.expiresAt - Date.now());
+                  text += `Status: ATIVA\n`;
+                  text += `Tipo: ${subData?.type || 'premium'}\n`;
+                  text += `Expira em: ${expDate} as ${expTime}\n`;
+                  text += `Tempo restante: ${restante}\n`;
+                  text += `Ativado por: ${subData?.activatedBy?.split('@')[0] || 'N/A'}\n`;
+                } else {
+                  text += `Status: INATIVA\n`;
+                  text += `Motivo: ${sub.reason || 'Sem assinatura'}\n`;
+                }
+                
+                text += `
+━━━ *ACOES* ━━━━━━━━━━━━━━
+➤ *ativar [dias]* — Ativar plano
+   Ex: ativar 30
+➤ *ativar trial* — Ativar teste gratis (3 dias)
+➤ *cancelar* — Cancelar assinatura
+➤ *renovar [dias]* — Adicionar dias
+➤ *menu* — Voltar ao menu principal`;
+                
+                await privateReply(text);
+                continue;
+              }
+              
+              // === DONO: ATIVAR PLANO ===
+              if (input.startsWith('ativar ') && ownerPrivate) {
+                const param = input.replace('ativar ', '').trim();
+                
+                if (param === 'trial') {
+                  // Ativar trial de 3 dias
+                  subscriptions[selectedGroupId] = {
+                    type: 'trial',
+                    expiresAt: Date.now() + (3 * 86400000),
+                    activatedBy: privateSender,
+                    activatedAt: Date.now()
+                  };
+                  saveDB('subscriptions', subscriptions);
+                  markGroupHistory(selectedGroupId, 'trial', privateSender.split('@')[0]);
+                  logBotAction('activate_trial', `Trial ativado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                  await privateReply(`Trial de 3 dias ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
+                  continue;
+                }
+                
+                const dias = parseInt(param);
+                if (!dias || dias < 1 || dias > 365) {
+                  await privateReply('Use: ativar [dias] (1-365)\nEx: ativar 30\nOu: ativar trial');
+                  continue;
+                }
+                
+                subscriptions[selectedGroupId] = {
+                  type: 'premium',
+                  expiresAt: Date.now() + (dias * 86400000),
+                  activatedBy: privateSender,
+                  activatedAt: Date.now()
+                };
+                saveDB('subscriptions', subscriptions);
+                markGroupHistory(selectedGroupId, 'paid', privateSender.split('@')[0]);
+                logBotAction('activate_plan', `${dias} dias em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                await privateReply(`Plano de *${dias} dias* ativado para *${selectedGroupName}*!\nExpira em: ${new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR')}`);
+                continue;
+              }
+              
+              // === DONO: CANCELAR PLANO ===
+              if (input === 'cancelar' && ownerPrivate) {
+                if (!subscriptions[selectedGroupId]) {
+                  await privateReply('Este grupo nao possui assinatura ativa.');
+                  continue;
+                }
+                markGroupHistory(selectedGroupId, subscriptions[selectedGroupId].type || 'paid', privateSender.split('@')[0]);
+                delete subscriptions[selectedGroupId];
+                saveDB('subscriptions', subscriptions);
+                logBotAction('cancel_plan', `Cancelado em ${selectedGroupName} por ${privateSender.split('@')[0]}`);
+                await privateReply(`Assinatura de *${selectedGroupName}* foi CANCELADA.`);
+                continue;
+              }
+              
+              // === DONO: RENOVAR PLANO ===
+              if (input.startsWith('renovar ') && ownerPrivate) {
+                const dias = parseInt(input.replace('renovar ', '').trim());
+                if (!dias || dias < 1 || dias > 365) {
+                  await privateReply('Use: renovar [dias] (1-365)\nEx: renovar 30');
+                  continue;
+                }
+                
+                const currentSub = subscriptions[selectedGroupId];
+                const baseTime = (currentSub && currentSub.expiresAt > Date.now()) ? currentSub.expiresAt : Date.now();
+                
+                subscriptions[selectedGroupId] = {
+                  type: 'premium',
+                  expiresAt: baseTime + (dias * 86400000),
+                  activatedBy: privateSender,
+                  activatedAt: Date.now(),
+                  renewedFrom: currentSub?.expiresAt || null
+                };
+                saveDB('subscriptions', subscriptions);
+                logBotAction('renew_plan', `+${dias} dias em ${selectedGroupName}`);
+                
+                const newExpire = new Date(subscriptions[selectedGroupId].expiresAt).toLocaleDateString('pt-BR');
+                await privateReply(`*${dias} dias* adicionados a *${selectedGroupName}*!\nNova data de expiracao: ${newExpire}\nTempo total restante: ${formatTime(subscriptions[selectedGroupId].expiresAt - Date.now())}`);
+                continue;
+              }
+              
+              // ============================================
+              // DONO: VER LOGS DE ERROS
+              // ============================================
+              if (input === 'logs' && ownerPrivate) {
+                const errors = botLogs.errors || [];
+                if (!errors.length) {
+                  await privateReply('Nenhum erro registrado.\n\nEnvie *logs acoes* para ver acoes recentes.');
+                  continue;
+                }
+                const last10 = errors.slice(-10).reverse();
+                let text = `*LOGS DE ERROS (ultimos ${last10.length}):*\n\n`;
+                last10.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  text += `${i + 1}. [${date}]\n   Contexto: ${log.context}\n   Erro: ${log.error}\n\n`;
+                });
+                text += '\nComandos:\n➤ *logs acoes* — Ver acoes recentes\n➤ *logs limpar* — Limpar todos os logs\n➤ *logs completo* — Ver todos os erros';
+                await privateReply(text);
+                continue;
+              }
+              
+              if (input === 'logs acoes' && ownerPrivate) {
+                const actions = botLogs.actions || [];
+                if (!actions.length) {
+                  await privateReply('Nenhuma acao registrada.');
+                  continue;
+                }
+                const last15 = actions.slice(-15).reverse();
+                let text = `*LOG DE ACOES (ultimas ${last15.length}):*\n\n`;
+                last15.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  text += `${i + 1}. [${date}]\n   ${log.action}: ${log.details}\n\n`;
+                });
+                await privateReply(text);
+                continue;
+              }
+              
+              if (input === 'logs limpar' && ownerPrivate) {
+                botLogs.errors = [];
+                botLogs.actions = [];
+                saveDB('botLogs', botLogs);
+                await privateReply('Todos os logs foram limpos!');
+                continue;
+              }
+              
+              if (input === 'logs completo' && ownerPrivate) {
+                const errors = botLogs.errors || [];
+                if (!errors.length) {
+                  await privateReply('Nenhum erro registrado.');
+                  continue;
+                }
+                // Enviar em blocos para não exceder limite
+                const chunks = [];
+                let current = '*TODOS OS ERROS:*\n\n';
+                errors.forEach((log, i) => {
+                  const date = new Date(log.time).toLocaleString('pt-BR');
+                  const entry = `${i + 1}. [${date}]\n   ${log.context}\n   ${log.error}\n   ${log.stack}\n\n`;
+                  if (current.length + entry.length > 3500) {
+                    chunks.push(current);
+                    current = '';
+                  }
+                  current += entry;
+                });
+                if (current) chunks.push(current);
+                for (const chunk of chunks) {
+                  await privateReply(chunk);
+                }
+                continue;
+              }
+              
+              // ============================================
+              // DONO: ESTATÍSTICAS DO GRUPO
+              // ============================================
+              if (input === 'stats' && ownerPrivate) {
+                const activity = userActivity[selectedGroupId] || {};
+                const members = Object.keys(activity).length;
+                let totalMsgs = 0;
+                let topUsers = [];
+                
+                for (const [uid, data] of Object.entries(activity)) {
+                  totalMsgs += data.messageCount || 0;
+                  topUsers.push({ id: uid, count: data.messageCount || 0, last: data.lastActive || 0 });
+                }
+                topUsers.sort((a, b) => b.count - a.count);
+                const top5 = topUsers.slice(0, 5);
+                
+                const sub = checkSubscription(selectedGroupId);
+                const cmdsCount = customCmds[selectedGroupId] ? Object.keys(customCmds[selectedGroupId]).length : 0;
+                const schedsCount = autoMessages[selectedGroupId] ? Object.keys(autoMessages[selectedGroupId]).length : 0;
+                const warnsCount = warnings[selectedGroupId] ? Object.keys(warnings[selectedGroupId]).length : 0;
+                
+                let text = `
 ╔══════════════════════════╗
-      🛒 *LOJA SignaBOT* 🛒
-╚══════════════════════════╝`;
+  *ESTATISTICAS — ${selectedGroupName}*
+╚══════════════════════════╝
+
+*Membros ativos:* ${members}
+*Total de mensagens:* ${totalMsgs}
+*Comandos personalizados:* ${cmdsCount}
+*Agendamentos:* ${schedsCount}
+*Membros com advertencia:* ${warnsCount}
+*Assinatura:* ${sub.active ? 'Ativa' : 'Inativa'}
+
+*Top 5 mais ativos:*
+`;
+                for (let i = 0; i < top5.length; i++) {
+                  const u = top5[i];
+                  // Resolver JID real (caso seja @lid interno do WhatsApp)
+                  let realJid = u.id;
+                  if (u.id.endsWith('@lid')) {
+                    try {
+                      const allGroups2 = await sock.groupFetchAllParticipating();
+                      const gData = allGroups2[selectedGroupId];
+                      if (gData) {
+                        const match = gData.participants.find(p => p.id === u.id || p.lid === u.id);
+                        if (match) realJid = match.id;
+                      }
+                    } catch {}
+                  }
+                  // Formatar número legível
+                  const rawNum = realJid.split('@')[0];
+                  let numFormatted = `+${rawNum}`;
+                  if (rawNum.startsWith('55') && rawNum.length >= 12) {
+                    const ddd = rawNum.substring(2, 4);
+                    const rest = rawNum.substring(4);
+                    numFormatted = rest.length >= 9
+                      ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
+                      : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+                  }
+                  const lastDate = u.last ? new Date(u.last).toLocaleDateString('pt-BR') : 'N/A';
+                  text += `${i + 1}. ${numFormatted} — ${u.count} msgs (ultimo: ${lastDate})\n`;
+                }
+                
+                if (!top5.length) text += 'Sem dados de atividade ainda.\n';
+                
+                await privateReply(text);
+                continue;
+              }
               
-              await sock.sendMessage(selectedGroupId, {
-                text: anuncio,
-                mentions: [privateSender]
-              });
+              // === VER EXPIRAÇÃO DO PLANO (para admins) ===
+              if (input === 'expira' || input === 'vencimento' || input === 'assinatura') {
+                const sub = checkSubscription(selectedGroupId);
+                const subData = subscriptions[selectedGroupId];
+                
+                if (sub.active) {
+                  const expDate = new Date(sub.expiresAt).toLocaleDateString('pt-BR');
+                  const expTime = new Date(sub.expiresAt).toLocaleTimeString('pt-BR');
+                  const restante = formatTime(sub.expiresAt - Date.now());
+                  await privateReply(`*Assinatura — ${selectedGroupName}*\n\nStatus: ATIVA\nTipo: ${subData?.type || 'premium'}\nExpira em: ${expDate} as ${expTime}\nTempo restante: ${restante}\n\nPara renovar, entre em contato:\nwa.me/${OWNER_NUMBER}`);
+                } else {
+                  await privateReply(`*Assinatura — ${selectedGroupName}*\n\nStatus: INATIVA\n${sub.reason || 'Sem assinatura'}\n\nPara adquirir um plano:\nwa.me/${OWNER_NUMBER}`);
+                }
+                continue;
+              }
               
-              continue;
-            }
-            
-            // Ver produtos
-            if (input === 'verprodutos') {
-              const products = shop[selectedGroupId];
-              if (!products || !Object.keys(products).length) {
-                await privateReply('📦 Nenhum produto anunciado.');
-                continue;
-              }
-              let text = `*📦 Produtos — ${selectedGroupName}:*\n\n`;
-              Object.entries(products).forEach(([id, p], i) => {
-                text += `${i + 1}. ${p.name} — ${p.price}\n   🆔 ${id}\n\n`;
-              });
-              await privateReply(text);
-              continue;
-            }
-            
-            // Deletar produto
-            if (input.startsWith('delproduto ')) {
-              const productId = input.replace('delproduto ', '').trim().toUpperCase();
-              if (!shop[selectedGroupId]?.[productId]) {
-                await privateReply('❌ Produto não encontrado.');
-                continue;
-              }
-              if (shop[selectedGroupId][productId].imagePath) {
-                try { fs.unlinkSync(shop[selectedGroupId][productId].imagePath); } catch {}
-              }
-              delete shop[selectedGroupId][productId];
-              saveDB('shop', shop);
-              await privateReply(`✅ Produto ${productId} removido!`);
-              continue;
-            }
-            
-            // Plano (dono)
-            if (input === 'plano' && ownerPrivate) {
-              const sub = checkSubscription(selectedGroupId);
-              let text = `*📊 Assinatura — ${selectedGroupName}*\n\n`;
-              if (sub.active) {
-                text += `Status: ✅ Ativa\n`;
-                text += `Tipo: ${subscriptions[selectedGroupId]?.type || 'premium'}\n`;
-                text += `Expira: ${new Date(sub.expiresAt).toLocaleString('pt-BR')}\n`;
-                text += `Restante: ${formatTime(sub.expiresAt - Date.now())}\n`;
-              } else {
-                text += `Status: ❌ Inativa\n`;
-              }
-              text += `\n*Ações:*\n➤ ativar [dias] — Ativar plano\n➤ cancelar — Cancelar`;
-              await privateReply(text);
-              continue;
-            }
-            
-            // Ativar plano (dono)
-            if (input.startsWith('ativar ') && ownerPrivate) {
-              const dias = parseInt(input.replace('ativar ', '').trim());
-              if (!dias || dias < 1 || dias > 365) {
-                await privateReply('❌ Use: ativar [dias] (1-365)');
-                continue;
-              }
-              subscriptions[selectedGroupId] = {
-                type: 'premium',
-                expiresAt: Date.now() + (dias * 86400000),
-                activatedBy: privateSender,
-                activatedAt: Date.now()
-              };
-              saveDB('subscriptions', subscriptions);
-              await privateReply(`✅ ${dias} dias ativados para ${selectedGroupName}!`);
-              continue;
-            }
-            
-            // Cancelar plano (dono)
-            if (input === 'cancelar' && ownerPrivate) {
-              if (!subscriptions[selectedGroupId]) {
-                await privateReply('❌ Sem assinatura ativa.');
-                continue;
-              }
-              delete subscriptions[selectedGroupId];
-              saveDB('subscriptions', subscriptions);
-              await privateReply(`✅ Assinatura de ${selectedGroupName} cancelada.`);
-              continue;
-            }
-            
-            // Stats (dono)
-            if (input === 'stats' && ownerPrivate) {
-              const activity = userActivity[selectedGroupId] || {};
-              const members = Object.keys(activity).length;
-              let totalMsgs = 0;
-              for (const data of Object.values(activity)) {
-                totalMsgs += data.messageCount || 0;
-              }
-              const cmdsCount = customCmds[selectedGroupId] ? Object.keys(customCmds[selectedGroupId]).length : 0;
-              const schedsCount = autoMessages[selectedGroupId] ? Object.keys(autoMessages[selectedGroupId]).length : 0;
-              const productsCount = shop[selectedGroupId] ? Object.keys(shop[selectedGroupId]).length : 0;
+              // === OPÇÃO NÃO RECONHECIDA ===
+              const validInputs = ['1','2','3','4','5','6','7','8','9','10','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar'];
+              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs '];
               
-              await privateReply(`*📊 Estatísticas — ${selectedGroupName}*\n\n👥 Membros ativos: ${members}\n💬 Total mensagens: ${totalMsgs}\n📝 Comandos: ${cmdsCount}\n📅 Agendamentos: ${schedsCount}\n📦 Produtos: ${productsCount}`);
-              continue;
+              if (!validInputs.includes(input) && !startsValid.some(s => input.startsWith(s))) {
+                await privateReply(`Opcao nao reconhecida.\n\nEnvie *menu* para ver todas as opcoes.\nOu envie um *numero* (1-10) para ativar/desativar funcoes.`);
+                continue;
+              }
             }
           }
           
-          // Detecção de admin e listagem de grupos
+          // ─────────────────────────────────────────────────────
+          // ETAPA: Detecção de Admin e listagem de grupos
+          // ─────────────────────────────────────────────────────
           if (pConfig.step === 'idle' || !pConfig.step) {
             try {
+              // Buscar todos os grupos do bot
               const allGroups = await sock.groupFetchAllParticipating();
               const adminGroups = [];
               
@@ -2832,15 +5281,18 @@ const connectBot = async () => {
                 }
               }
               
-              // Dono do bot: mostrar todos
+              // ── DONO DO BOT: Mostrar TODOS os grupos + painel especial ──
               if (ownerPrivate) {
                 const allGroupsList = Object.entries(allGroups).map(([gId, g]) => {
                   const sub = checkSubscription(gId);
+                  const subStatus = sub.active ? 'Ativa' : 'Inativa';
+                  const expira = sub.active ? formatTime(sub.expiresAt - Date.now()) : '-';
                   return {
                     id: gId,
                     name: g.subject,
-                    role: 'Dono',
-                    subStatus: sub.active ? '✅' : '❌',
+                    role: 'Dono do Bot',
+                    subStatus,
+                    expira,
                     members: g.participants?.length || 0
                   };
                 });
@@ -2850,91 +5302,113 @@ const connectBot = async () => {
                   pConfig.adminGroups = allGroupsList;
                   saveDB('privateConfig', privateConfig);
                   
+                  // Contar estatísticas gerais
+                  const totalGrupos = allGroupsList.length;
+                  const gruposAtivos = allGroupsList.filter(g => g.subStatus === 'Ativa').length;
+                  const gruposInativos = totalGrupos - gruposAtivos;
+                  const totalErros = (botLogs.errors || []).length;
+                  
                   let text = `
-╔═══════════════════════════════╗
-   👑 *PAINEL DO DONO — SignaBOT*
-╚═══════════════════════════════╝
+╔══════════════════════════╗
+  *PAINEL DO DONO — SignaBOT*
+╚══════════════════════════╝
 
-Olá, *${message.pushName || 'Dono'}*!
+Ola, *${message.pushName || 'Dono'}*!
 
-📊 *Resumo:*
-➤ Total de grupos: ${allGroupsList.length}
-➤ Assinaturas ativas: ${allGroupsList.filter(g => g.subStatus === '✅').length}
+*RESUMO GERAL:*
+Total de grupos: ${totalGrupos}
+Assinaturas ativas: ${gruposAtivos}
+Assinaturas inativas: ${gruposInativos}
+Erros registrados: ${totalErros}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📋 *GRUPOS*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ *GRUPOS* ━━━━━━━━━━━━━
 `;
                   allGroupsList.forEach((g, i) => {
-                    text += `*${i + 1}.* ${g.name}\n   ${g.subStatus} | ${g.members} membros\n\n`;
+                    const icon = g.subStatus === 'Ativa' ? '[ON]' : '[OFF]';
+                    text += `*${i + 1}.* ${g.name}\n   ${icon} | ${g.members} membros`;
+                    if (g.subStatus === 'Ativa') text += ` | Expira: ${g.expira}`;
+                    text += `\n\n`;
                   });
                   
-                  text += `\nEnvie o *número* do grupo para configurar.`;
+                  text += `Envie o *numero* do grupo para configurar.\n\n╔══════════════════════════╗\n        ⚡ *SignaBOT* ⚡\n╚══════════════════════════╝`;
                   
                   await privateReply(text);
                   continue;
                 }
               }
               
-              // Admin normal
+              // ── ADMIN: Listar grupos onde é admin ──
               if (adminGroups.length > 0) {
                 pConfig.step = 'awaiting_group_selection';
                 pConfig.adminGroups = adminGroups;
                 saveDB('privateConfig', privateConfig);
                 
                 let text = `
-╔═══════════════════════════════╗
-   ⚙️ *PAINEL DE ADMIN — SignaBOT*
-╚═══════════════════════════════╝
+╔══════════════════════════╗
+  *PAINEL DE ADMIN — SignaBOT*
+╚══════════════════════════╝
 
-Olá, *${message.pushName || 'Admin'}*!
-Você é admin em *${adminGroups.length} grupo(s)*:
+Ola, *${message.pushName || 'Admin'}*!
+Voce e admin em *${adminGroups.length} grupo(s)*:
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
                 adminGroups.forEach((g, i) => {
                   const sub = checkSubscription(g.id);
-                  const subStatus = sub.active ? '✅' : '❌';
-                  text += `*${i + 1}.* ${g.name}\n   ${g.role} | Assinatura: ${subStatus}\n\n`;
+                  const subStatus = sub.active ? 'Ativa' : 'Inativa';
+                  const expira = sub.active ? ` | Expira: ${formatTime(sub.expiresAt - Date.now())}` : '';
+                  text += `*${i + 1}.* ${g.name}\n   ${g.role} | Assinatura: ${subStatus}${expira}\n\n`;
                 });
                 
-                text += `\nEnvie o *número* do grupo para configurar.`;
+                text += `Envie o *numero* do grupo que deseja configurar.\n\n╔══════════════════════════╗\n        ⚡ *SignaBOT* ⚡\n╚══════════════════════════╝`;
                 
                 await privateReply(text);
                 continue;
               } else {
+                // ── NÃO É ADMIN: Redirecionar para compra ──
                 await privateReply(`
-Olá, *${message.pushName || 'Usuário'}*!
 
-❌ Você não é administrador de nenhum grupo com o SignaBOT.
+Olá, *${message.pushName || 'Usuario'}*!
+
+Ops! Você *não é administrador* e não possui assinatura ativa de nenhum
+grupo onde o *SignaBOT* esta presente.
 
 *Para usar o SignaBOT:*
 1. Assine um plano
 2. Adicione o bot ao seu grupo
-3. Torne o bot admin
+3. Torne o bot admin do grupo
 
-*Planos:*
-➤ 7 dias — R$ 5,00
-➤ 30 dias — R$ 10,00
-➤ 60 dias — R$ 15,00
-➤ 90 dias — R$ 20,00
+*Planos SignaBOT:*
+  1 dias  — R$ 1,00
+  7 dias  — R$ 5,00
+  30 dias — R$ 10,00
+  60 dias — R$ 15,00
+  90 dias — R$ 20,00
 
-*Contato:* wa.me/${OWNER_NUMBER}`);
+  *PAGAMENTO PIX (MANUAL)*
+  jeisiel-erick@jim.com
+
+*Contato para assinar:*
+wa.me/${OWNER_NUMBER}
+
+╔══════════════════════════╗
+      ⚡ *SignaBOT* ⚡
+╚══════════════════════════╝`);
                 continue;
               }
             } catch (err) {
-              console.log('[PRIVADO] Erro:', err.message);
-              logBotError('private_detection', err);
-              await privateReply('❌ Erro ao processar. Tente novamente.');
+              console.log('[PRIVADO] Erro ao buscar grupos:', err.message);
+              logBotError('private_admin_detection', err);
+              await privateReply('Erro ao processar. Tente novamente em alguns segundos.');
               continue;
             }
           }
         }
 
-        // Processar comandos
+        // PROCESSAR COMANDOS (multi prefixos: #, /, !)
         if (body && PREFIXES.some(p => body.startsWith(p))) {
           const parts = body.trim().split(/\s+/);
           const rawCommand = parts[0].toLowerCase();
+          // Normalizar comando para sempre usar # como prefixo interno
           const command = '#' + rawCommand.substring(1);
           const args = parts.slice(1);
           try {
@@ -2946,117 +5420,265 @@ Olá, *${message.pushName || 'Usuário'}*!
         }
 
       } catch (err) {
-        console.log('[SignaBot] Erro: ' + err.message);
-        logBotError('messages.upsert', err);
+        console.log('[SignaBot] Erro ao processar mensagem: ' + err.message);
       }
     }
   });
 
-  // Verificar assinaturas e agendamentos a cada minuto
+  // ========== VERIFICAR ASSINATURAS EXPIRADAS A CADA MINUTO ==========
   setInterval(async () => {
     const now = Date.now();
     
-    // Verificar assinaturas expiradas
     for (const [groupId, sub] of Object.entries(subscriptions)) {
       if (sub.expiresAt < now && !sub.notified) {
         try {
+          // Registrar no histórico antes de notificar
           markGroupHistory(groupId, sub.type || 'paid', null);
+
           await sock.sendMessage(groupId, {
-            text: `⚠️ *Assinatura Expirada*\n\nO ${sub.type === 'trial' ? 'teste grátis' : 'plano'} expirou.\n\nContato: wa.me/${OWNER_NUMBER}`,
+            text: `⚠️ *Assinatura Expirada*\n\nO período de ${sub.type === 'trial' ? 'teste grátis' : 'assinatura'} expirou.\n\nO bot está bloqueado até que o dono ative novamente com o comando:\n!ativar [30|60] dias\n\nContato do dono:\nwa.me/${OWNER_NUMBER}`,
           });
+          
           subscriptions[groupId].notified = true;
           saveDB('subscriptions', subscriptions);
-        } catch {}
-      }
-    }
-    
-    // Verificar agendamentos
-    const currentTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const currentDay = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'][new Date().getDay()];
-    
-    for (const [groupId, scheds] of Object.entries(autoMessages)) {
-      for (const [schedId, sched] of Object.entries(scheds)) {
-        if (!sched.active) continue;
-        
-        // Agendamento único (por minutos/horas)
-        if (sched.type === 'once' && sched.executeAt && sched.executeAt <= now) {
-          try {
-            await sock.sendMessage(groupId, { text: sched.text });
-            // Marcar como executado
-            sched.active = false;
-            sched.executedAt = now;
-            saveDB('autoMessages', autoMessages);
-          } catch (err) {
-            console.log('[SCHEDULE] Erro:', err.message);
-          }
-        }
-        
-        // Agendamento diário (horário fixo)
-        if (sched.type === 'daily' && sched.time === currentTime) {
-          // Verificar dia da semana
-          const days = sched.days || 'todos';
-          if (days !== 'todos' && !days.includes(currentDay)) continue;
-          
-          // Evitar enviar múltiplas vezes no mesmo minuto
-          const lastSent = sched.lastSent || 0;
-          if (now - lastSent < 60000) continue;
-          
-          try {
-            await sock.sendMessage(groupId, { text: sched.text });
-            sched.lastSent = now;
-            saveDB('autoMessages', autoMessages);
-          } catch (err) {
-            console.log('[SCHEDULE] Erro:', err.message);
-          }
+          console.log(`[SignaBot] Notificação de expiração enviada para ${groupId}`);
+        } catch (err) {
+          console.log(`[SignaBot] Erro ao notificar expiração: ${err.message}`);
         }
       }
     }
   }, 60000);
 
-  // Eventos de grupo (entrar/sair)
+  // ============================================================
+  // EVENTOS DE GRUPO (entrar/sair)
+  // ============================================================
+
   sock.ev.on('group-participants.update', async ({ id: groupId, participants, action }) => {
     const settings = getGroupSettings(groupId);
     const sub = checkSubscription(groupId);
     if (!sub.active) return;
 
-    if (action === 'add' && settings.welcome) {
+  if (action === 'add' && settings.welcome) {
       for (const participant of participants) {
+        // Verificar lista negra
         if (blacklist[participant]) {
           try { await sock.groupParticipantsUpdate(groupId, [participant], 'remove'); } catch {}
           continue;
         }
 
+        // Substituir variáveis na mensagem de boas-vindas
         let welcomeText = settings.welcomeMsg ||
-          `🎉 Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\nDigite *#menu* para ver os comandos.`;
+          `🎉 Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\n👋 Que bom ter você aqui!\nFique á vontade conosco!`;
 
+        // Substituição de variáveis: @user, @group, @desc, @numero
         try {
           const meta = await sock.groupMetadata(groupId);
+          const memberCount = meta.participants.length;
+          const numFormatted = (() => {
+            const rawNum = participant.split('@')[0];
+            if (rawNum.startsWith('55') && rawNum.length >= 12) {
+              const ddd = rawNum.substring(2, 4);
+              const rest = rawNum.substring(4);
+              return rest.length >= 9
+                ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
+                : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+            }
+            return `+${rawNum}`;
+          })();
+
           welcomeText = replaceVars(welcomeText, {
             user: `@${participant.split('@')[0]}`,
             group: meta.subject || 'o grupo',
             desc: meta.desc || '',
-            numero: participant.split('@')[0],
-            membros: String(meta.participants.length),
+            numero: numFormatted,
+            membros: String(memberCount),
           });
         } catch {}
 
         try {
+          // ── Tentar gerar imagem de boas-vindas personalizada ──
+          const ppUrl = await sock.profilePictureUrl(participant, 'image').catch(() => null);
+
+          // Verificar se tem imagem de fundo customizada configurada
+          const welcomeBgPath = settings.welcomeBgPath || null;
+
+          // Gerar imagem usando sharp (compositing)
+          let welcomeImage = null;
+          try {
+            // Dimensões do card
+            const W = 800, H = 400;
+
+            // 1. Criar fundo base (gradiente simulado com retângulos sobrepostos)
+            const bgColor = settings.welcomeBgColor || { r: 15, g: 23, b: 42 }; // Azul escuro padrão
+            const accentColor = settings.welcomeAccentColor || { r: 99, g: 102, b: 241 }; // Índigo
+
+            // SVG do fundo com design moderno
+            const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:rgb(${bgColor.r},${bgColor.g},${bgColor.b});stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:rgb(${Math.min(bgColor.r+20,255)},${Math.min(bgColor.g+15,255)},${Math.min(bgColor.b+40,255)});stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:rgb(${accentColor.r},${accentColor.g},${accentColor.b});stop-opacity:0.8" />
+                  <stop offset="100%" style="stop-color:rgb(${Math.min(accentColor.r+30,255)},${accentColor.g},${Math.min(accentColor.b+50,255)});stop-opacity:0.3" />
+                </linearGradient>
+              </defs>
+              <!-- Fundo principal -->
+              <rect width="${W}" height="${H}" fill="url(#bg)" rx="20"/>
+              <!-- Faixa decorativa superior -->
+              <rect x="0" y="0" width="${W}" height="6" fill="url(#accent)" rx="20"/>
+              <!-- Faixa decorativa inferior -->
+              <rect x="0" y="${H-6}" width="${W}" height="6" fill="url(#accent)"/>
+              <!-- Círculo decorativo fundo direito -->
+              <circle cx="${W-80}" cy="${H/2}" r="180" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" fill-opacity="0.06"/>
+              <circle cx="${W-40}" cy="60" r="80" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" fill-opacity="0.08"/>
+              <!-- Painel da foto de perfil (círculo branco) -->
+              <circle cx="200" cy="${H/2}" r="108" fill="white" fill-opacity="0.1"/>
+              <circle cx="200" cy="${H/2}" r="104" fill="none" stroke="url(#accent)" stroke-width="4"/>
+            </svg>`;
+
+            let compositeInputs = [];
+
+            // 2. Foto de perfil (circular)
+            if (ppUrl) {
+              try {
+                const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 8000 });
+                const ppBuffer = Buffer.from(ppResp.data);
+
+                // Criar máscara circular para a foto de perfil
+                const circleMask = Buffer.from(
+                  `<svg width="200" height="200"><circle cx="100" cy="100" r="100" fill="white"/></svg>`
+                );
+                const circularPp = await sharp(ppBuffer)
+                  .resize(200, 200, { fit: 'cover' })
+                  .composite([{ input: circleMask, blend: 'dest-in' }])
+                  .png()
+                  .toBuffer();
+
+                compositeInputs.push({
+                  input: circularPp,
+                  left: 100,
+                  top: Math.round(H / 2) - 100
+                });
+              } catch {}
+            }
+
+            // 3. Texto SVG sobreposto (nome, saudação, grupo)
+            const displayName = participant.split('@')[0];
+            const groupName = await sock.groupMetadata(groupId).then(m => m.subject).catch(() => 'Grupo');
+            const memberCount2 = await sock.groupMetadata(groupId).then(m => m.participants.length).catch(() => '?');
+
+            // Truncar nome longo
+            const shortName = displayName.length > 18 ? displayName.substring(0, 18) + '...' : displayName;
+            const shortGroup = groupName.length > 24 ? groupName.substring(0, 24) + '...' : groupName;
+
+            const textSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+              <!-- BEM-VINDO pequeno -->
+              <text x="340" y="130" font-family="Arial, sans-serif" font-size="18" fill="rgb(${accentColor.r},${accentColor.g},${accentColor.b})" font-weight="bold" letter-spacing="4">BEM-VINDO(A)!</text>
+              <!-- Nome do usuário grande -->
+              <text x="340" y="210" font-family="Arial, sans-serif" font-size="42" fill="white" font-weight="bold">+${shortName}</text>
+              <!-- Separador -->
+              <rect x="340" y="228" width="260" height="3" fill="url(#accent2)" rx="2"/>
+              <!-- Nome do grupo -->
+              <text x="340" y="268" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.7)">📍 ${shortGroup}</text>
+              <!-- Membros -->
+              <text x="340" y="308" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.55)">👥 Membro número ${memberCount2}</text>
+              <!-- SignaBot rodapé -->
+              <text x="340" y="360" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.35)">⚡ SignaBOT</text>
+              <defs>
+                <linearGradient id="accent2" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:rgb(${accentColor.r},${accentColor.g},${accentColor.b});stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:rgba(255,255,255,0);stop-opacity:0" />
+                </linearGradient>
+              </defs>
+            </svg>`;
+
+            compositeInputs.push({
+              input: Buffer.from(textSvg),
+              left: 0,
+              top: 0
+            });
+
+            // Compor tudo junto
+            let baseImage = sharp(Buffer.from(bgSvg));
+
+            // Se tem imagem de fundo personalizada, usar ela como base
+            if (welcomeBgPath && fs.existsSync(welcomeBgPath)) {
+              try {
+                baseImage = sharp(welcomeBgPath).resize(W, H, { fit: 'cover' });
+                // Adicionar overlay escuro para legibilidade
+                compositeInputs.unshift({
+                  input: Buffer.from(`<svg width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="rgba(0,0,0,0.55)" rx="20"/></svg>`),
+                  left: 0, top: 0
+                });
+              } catch {}
+            }
+
+            welcomeImage = await baseImage
+              .composite(compositeInputs)
+              .jpeg({ quality: 90 })
+              .toBuffer();
+
+          } catch (imgErr) {
+            console.log('[WELCOME IMG] Erro ao gerar imagem:', imgErr.message);
+            welcomeImage = null;
+          }
+
+          // Enviar mensagem com imagem ou só texto
+          if (welcomeImage) {
+            await sock.sendMessage(groupId, {
+              image: welcomeImage,
+              caption: welcomeText,
+              mentions: [participant],
+            });
+          } else if (ppUrl) {
+            // Fallback: foto de perfil simples
+            const ppResp = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 8000 });
+            await sock.sendMessage(groupId, {
+              image: Buffer.from(ppResp.data),
+              caption: welcomeText,
+              mentions: [participant],
+            });
+          } else {
+            await sock.sendMessage(groupId, {
+              text: welcomeText,
+              mentions: [participant],
+            });
+          }
+        } catch {
           await sock.sendMessage(groupId, {
             text: welcomeText,
             mentions: [participant],
-          });
-        } catch {}
+          }).catch(() => {});
+        }
       }
     }
 
-    if (action === 'remove' && settings.leaveMsg) {
+    if (action === 'remove') {
       for (const participant of participants) {
-        try {
+        if (settings.leaveMsg) {
           await sock.sendMessage(groupId, {
-            text: settings.leaveMsg.replace(/@user|{user}/gi, `@${participant.split('@')[0]}`),
+            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
             mentions: [participant],
-          });
-        } catch {}
+          }).catch(() => {});
+        }
+      }
+    }
+  });
+
+  // Anti-chamada
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+      if (call.status === 'offer') {
+        const groupId = call.from;
+        const settings = getGroupSettings(groupId);
+        if (settings.anticall) {
+          await sock.rejectCall(call.id, call.from);
+          await sock.sendMessage(call.from, {
+            text: 'Chamadas nao sao permitidas! Por favor, use mensagens de texto.',
+          }).catch(() => {});
+        }
       }
     }
   });
@@ -3066,6 +5688,6 @@ Olá, *${message.pushName || 'Usuário'}*!
 
 // Iniciar bot
 connectBot().catch(err => {
-  console.log('[SignaBot] Erro fatal: ' + err.message);
+  console.log('[SignaBot] Erro fatal ao iniciar: ' + err.message);
   setTimeout(() => connectBot(), 10000);
 });
