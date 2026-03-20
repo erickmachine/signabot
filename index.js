@@ -1,5 +1,4 @@
-const {
-  default: makeWASocket,
+const { default: makeWASocket,
   DisconnectReason,
   useMultiFileAuthState,
   downloadContentFromMessage,
@@ -8,13 +7,14 @@ const {
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const axios = require('axios');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
-const yts = require('yt-search');
 const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
+const { execFile } = require('child_process');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -102,7 +102,6 @@ let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, ima
 let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
 let botLogs       = loadDB('botLogs');       // { errors: [], actions: [] }
 let groupHistory  = loadDB('groupHistory');  // { groupId: { hadTrial, hadPaid, ownerNumbers: [] } }
-let shopProducts  = loadDB('shopProducts');  // { groupId: { prodId: { name, price, desc, image, status, creator } } }
 
 // Inicializar logs se necessário
 if (!botLogs.errors) botLogs.errors = [];
@@ -527,6 +526,12 @@ if (command === '#status') {
 ➤ #descgp [desc]
 ➤ #linkgp
 ➤ #regras [texto]
+
+🎵 *DOWNLOADS*
+➤ #mp3 [link] — Áudio (YouTube, TikTok...)
+➤ #mp4 [link] [qualidade] — Vídeo (240/360/480/720p)
+➤ #tiktok [link] — TikTok sem marca d'água
+➤ #ytinfo [link] — Info sem baixar
 
 🚫 *LISTA NEGRA*
 ➤ #listanegra add [num]
@@ -3762,6 +3767,346 @@ na internet. Cada conexão tem um.
   }
 
   // ===========================================================
+  // DOWNLOADS COM YT-DLP (YouTube, TikTok, Instagram, etc.)
+  // ===========================================================
+
+  // Helper: executa yt-dlp como Promise e retorna stdout
+  const ytdlp = (args) => new Promise((resolve, reject) => {
+    // Procurar yt-dlp no PATH ou em locais comuns
+    const bins = ['yt-dlp', './yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'];
+    const bin = bins.find(b => {
+      try { require('fs').accessSync(b); return true; } catch { return false; }
+    }) || 'yt-dlp';
+    execFile(bin, args, { maxBuffer: 50 * 1024 * 1024, timeout: 120000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout.trim());
+    });
+  });
+
+  // Helper: valida URL (YouTube, TikTok, Instagram, etc.)
+  const isValidMediaUrl = (url) => {
+    return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|facebook\.com)\//i.test(url);
+  };
+
+  // Helper: formata duração em mm:ss
+  const formatDuration = (seconds) => {
+    if (!seconds) return 'N/A';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Cache em memória simples: evita rebaixar o mesmo URL repetido
+  // { url+quality: { filePath, addedAt } }
+  if (!global._ytdlpCache) global._ytdlpCache = {};
+  const YTDLP_CACHE = global._ytdlpCache;
+  const YTDLP_CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+
+  const getCached = (key) => {
+    const entry = YTDLP_CACHE[key];
+    if (!entry) return null;
+    if (Date.now() - entry.addedAt > YTDLP_CACHE_TTL) { delete YTDLP_CACHE[key]; return null; }
+    if (!fs.existsSync(entry.filePath)) { delete YTDLP_CACHE[key]; return null; }
+    return entry.filePath;
+  };
+  const setCache = (key, filePath) => {
+    YTDLP_CACHE[key] = { filePath, addedAt: Date.now() };
+    // Limpar cache antigo automaticamente
+    for (const [k, v] of Object.entries(YTDLP_CACHE)) {
+      if (Date.now() - v.addedAt > YTDLP_CACHE_TTL) delete YTDLP_CACHE[k];
+    }
+  };
+
+  // ── #mp3 [url] — Baixar audio do YouTube/TikTok/etc. ──
+  if (command === '#mp3' || command === '#audio' || command === '#musica') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #mp3 [link]\nExemplo: #mp3 https://youtu.be/dQw4w9WgXcQ\n\nFunciona com: YouTube, TikTok, Instagram, Twitter/X');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!\nExemplo: #mp3 https://youtu.be/...');
+
+    const waitMsg = await sock.sendMessage(groupId || sender, {
+      text: '⏳ Baixando áudio, aguarde...',
+    }, { quoted: message });
+
+    const cacheKey = `mp3:${url}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        // Primeiro buscar info do vídeo
+        let info;
+        try {
+          const infoJson = await ytdlp([
+            '--dump-json', '--no-playlist',
+            '--socket-timeout', '30',
+            url
+          ]);
+          info = JSON.parse(infoJson);
+        } catch { info = null; }
+
+        // Verificar duração (limite de 15 minutos para audio)
+        if (info && info.duration && info.duration > 900) {
+          await sock.sendMessage(groupId || sender, { text: '❌ Vídeo muito longo! Limite: 15 minutos para #mp3.\nUse um vídeo mais curto.' }, { quoted: message });
+          return;
+        }
+
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `audio_${Date.now()}.mp3`);
+
+        await ytdlp([
+          '-x',
+          '--audio-format', 'mp3',
+          '--audio-quality', '128K',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const audioBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = audioBuffer.length / (1024 * 1024);
+
+      // WhatsApp limita envio a ~64MB
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB). Limite do WhatsApp: 60MB.`
+        }, { quoted: message });
+      }
+
+      // Tentar pegar título
+      let title = 'Audio';
+      try {
+        const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '15', url]);
+        const info2 = JSON.parse(infoJson);
+        title = info2.title || 'Audio';
+      } catch {}
+
+      await sock.sendMessage(groupId || sender, {
+        audio: audioBuffer,
+        mimetype: 'audio/mpeg',
+        fileName: `${title.substring(0, 50)}.mp3`,
+        ptt: false,
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[MP3] Erro:', err.message);
+      logBotError('mp3_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar áudio:\n${err.message}\n\nVerifique se o link é válido e tente novamente.`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ── #mp4 [url] [qualidade] — Baixar video ──
+  if (command === '#mp4' || command === '#video' || command === '#baixar') {
+    const url = args[0];
+    const qualityArg = args[1] || '480'; // padrão 480p para velocidade
+    if (!url) return reply('❌ Use: #mp4 [link] [qualidade]\nExemplos:\n#mp4 https://youtu.be/xxx\n#mp4 https://youtu.be/xxx 720\n\nQualidades: 240, 360, 480, 720\n\nFunciona com: YouTube, TikTok, Instagram, Twitter/X');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!');
+
+    const quality = ['240', '360', '480', '720'].includes(qualityArg) ? qualityArg : '480';
+
+    await sock.sendMessage(groupId || sender, {
+      text: `⏳ Baixando vídeo em ${quality}p, aguarde...`,
+    }, { quoted: message });
+
+    const cacheKey = `mp4:${url}:${quality}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        // Verificar duração (limite de 10 minutos para video)
+        let info;
+        try {
+          const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '30', url]);
+          info = JSON.parse(infoJson);
+        } catch { info = null; }
+
+        if (info && info.duration && info.duration > 600) {
+          await sock.sendMessage(groupId || sender, {
+            text: '❌ Vídeo muito longo! Limite: 10 minutos para #mp4.\nPara músicas longas use #mp3.'
+          }, { quoted: message });
+          return;
+        }
+
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `video_${Date.now()}.mp4`);
+
+        await ytdlp([
+          '--format', `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best`,
+          '--merge-output-format', 'mp4',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const videoBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = videoBuffer.length / (1024 * 1024);
+
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB). Tente uma qualidade menor:\n#mp4 ${url} 360`
+        }, { quoted: message });
+      }
+
+      let title = 'Video';
+      try {
+        const infoJson = await ytdlp(['--dump-json', '--no-playlist', '--socket-timeout', '15', url]);
+        const info2 = JSON.parse(infoJson);
+        title = info2.title || 'Video';
+      } catch {}
+
+      await sock.sendMessage(groupId || sender, {
+        video: videoBuffer,
+        mimetype: 'video/mp4',
+        fileName: `${title.substring(0, 50)}.mp4`,
+        caption: `🎬 ${title.substring(0, 100)}`,
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[MP4] Erro:', err.message);
+      logBotError('mp4_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar vídeo:\n${err.message}\n\nTente uma qualidade menor: #mp4 ${url} 360`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ── #ytinfo [url] — Informações do vídeo sem baixar ──
+  if (command === '#ytinfo' || command === '#videoinfo') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #ytinfo [link]\nExemplo: #ytinfo https://youtu.be/dQw4w9WgXcQ');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido!');
+
+    await reply('🔍 Buscando informações...');
+
+    try {
+      const infoJson = await ytdlp([
+        '--dump-json', '--no-playlist',
+        '--socket-timeout', '30',
+        url
+      ]);
+      const info = JSON.parse(infoJson);
+
+      const duration = formatDuration(info.duration);
+      const views = info.view_count ? info.view_count.toLocaleString('pt-BR') : 'N/A';
+      const likes = info.like_count ? info.like_count.toLocaleString('pt-BR') : 'N/A';
+      const uploadDate = info.upload_date
+        ? `${info.upload_date.substring(6,8)}/${info.upload_date.substring(4,6)}/${info.upload_date.substring(0,4)}`
+        : 'N/A';
+
+      const text = `
+*${info.title}*
+
+👤 Canal: ${info.uploader || info.channel || 'N/A'}
+⏱ Duração: ${duration}
+👁 Visualizações: ${views}
+👍 Curtidas: ${likes}
+📅 Data: ${uploadDate}
+🌐 Plataforma: ${info.extractor_key || info.extractor || 'N/A'}
+
+*Para baixar:*
+🎵 #mp3 ${url}
+🎬 #mp4 ${url}
+      `.trim();
+
+      // Enviar com thumbnail se disponível
+      if (info.thumbnail) {
+        try {
+          const thumbResp = await axios.get(info.thumbnail, { responseType: 'arraybuffer', timeout: 8000 });
+          await sock.sendMessage(groupId || sender, {
+            image: Buffer.from(thumbResp.data),
+            caption: text,
+          }, { quoted: message });
+          return;
+        } catch {}
+      }
+      await reply(text);
+    } catch (err) {
+      console.log('[YTINFO] Erro:', err.message);
+      logBotError('ytinfo', err);
+      await reply(`❌ Não foi possível obter informações.\n${err.message}`);
+    }
+    return;
+  }
+
+  // ── #tiktok [url] — Download TikTok sem marca d'água ──
+  if (command === '#tiktok' || command === '#tk') {
+    const url = args[0];
+    if (!url) return reply('❌ Use: #tiktok [link]\nExemplo: #tiktok https://vm.tiktok.com/...\n\nBaixa o vídeo sem marca d\'água!');
+    if (!url.startsWith('http')) return reply('❌ Envie um link válido do TikTok!');
+
+    await sock.sendMessage(groupId || sender, {
+      text: '⏳ Baixando TikTok sem marca d\'água...',
+    }, { quoted: message });
+
+    const cacheKey = `tiktok:${url}`;
+    let outPath = getCached(cacheKey);
+
+    try {
+      if (!outPath) {
+        const tmpDir = path.join(os.tmpdir(), 'signabot_dl');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        outPath = path.join(tmpDir, `tiktok_${Date.now()}.mp4`);
+
+        await ytdlp([
+          '--format', 'best',
+          '--no-playlist',
+          '--socket-timeout', '30',
+          '--output', outPath,
+          '--no-warnings',
+          // Flag para remover marca d'água do TikTok quando disponível
+          '--extractor-args', 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com',
+          url
+        ]);
+
+        setCache(cacheKey, outPath);
+      }
+
+      if (!fs.existsSync(outPath)) throw new Error('Arquivo não gerado.');
+
+      const videoBuffer = fs.readFileSync(outPath);
+      const fileSizeMB = videoBuffer.length / (1024 * 1024);
+
+      if (fileSizeMB > 60) {
+        return await sock.sendMessage(groupId || sender, {
+          text: `❌ Arquivo muito grande (${fileSizeMB.toFixed(1)}MB).`
+        }, { quoted: message });
+      }
+
+      await sock.sendMessage(groupId || sender, {
+        video: videoBuffer,
+        mimetype: 'video/mp4',
+        caption: '🎵 TikTok baixado!',
+      }, { quoted: message });
+
+    } catch (err) {
+      console.log('[TIKTOK] Erro:', err.message);
+      logBotError('tiktok_download', err);
+      await sock.sendMessage(groupId || sender, {
+        text: `❌ Erro ao baixar TikTok:\n${err.message}`
+      }, { quoted: message });
+    }
+    return;
+  }
+
+  // ===========================================================
   // EXECUTAR COMANDOS PERSONALIZADOS (verifica se existe)
   // ===========================================================
   
@@ -4355,7 +4700,7 @@ const connectBot = async () => {
           };
           
           // ─────────────────────────────────────────────────────
-          // ETAPA: Seleção de grupo (resposta numérica)
+          // ETAPA: Sele��ão de grupo (resposta numérica)
           // ─────────────────────────────────────────────────────
           if (pConfig.step === 'awaiting_group_selection' && /^\d+$/.test(body.trim())) {
             const idx = parseInt(body.trim()) - 1;
