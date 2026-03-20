@@ -5468,7 +5468,7 @@ wa.me/${OWNER_NUMBER}
 
         // Substituir variáveis na mensagem de boas-vindas
         let welcomeText = settings.welcomeMsg ||
-          `🎉 Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\n👋 Que bom ter você aqui!\nDigite *#menu* para ver os comandos disponíveis.`;
+          `🎉 Bem-vindo(a) ao grupo, @${participant.split('@')[0]}!\n\n👋 Que bom ter você aqui!\nFique á vontade conosco!.`;
 
         // Substituição de variáveis: @user, @group, @desc, @numero
         try {
