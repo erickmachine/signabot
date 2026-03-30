@@ -374,8 +374,13 @@ if (command === '#status') {
 ➤ Prefixos: # / !
 
 📌 *MENUS DISPONÍVEIS*
+➤ #menu admin     — Painel de admin
+➤ #menu mod       — Moderação
+➤ #menu filtros   — Filtros automáticos
+➤ #menu boas-vindas — Bem-vindo/saída
+➤ #menu auto      — Automações
+➤ #menu config    — Configurações grupo
 ➤ #menu figurinhas
-➤ #menu admin
 ➤ #menu diversão
 ➤ #menu grupo
 ➤ #menu info
@@ -538,7 +543,7 @@ Use sites como:
     }
 
     // ===========================================================
-    // MENU ADMIN
+    // MENU ADMIN (dividido em submenus)
     // ===========================================================
     if (sub === 'admin' || sub === 'adm') {
       if (!cargoCheck(groupId, 'admin', 'mod')) {
@@ -561,84 +566,235 @@ Use sites como:
      🤖 MENU ADMIN 🤖
 ╚══════════════════╝
 
-👥 *GERENCIAR MEMBROS*
-➤ #ban @user
-➤ #add 559999999999
-➤ #promover @user
-➤ #rebaixar @user
+📌 *ESCOLHA UMA CATEGORIA:*
+
+👥 *#menu mod* — Moderação
+   Ban, add, mute, advertências...
+
+🛡️ *#menu filtros* — Filtros automáticos
+   Antilink, anti palavrão, anti vendas...
+
+👋 *#menu boas-vindas* — Boas-vindas
+   Mensagens de entrada e saída...
+
+⏰ *#menu auto* — Automações
+   Agendamentos, abertura/fechamento...
+
+🔧 *#menu config* — Configurações
+   Grupo, regras, links, informações...
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU MODERAÇÃO
+    // ===========================================================
+    if (sub === 'mod' || sub === 'moderacao' || sub === 'moderação') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
+      return reply(`
+╔══════════════════╗
+     👮 MENU MODERAÇÃO 👮
+╚══════════════════╝
+
+🚫 *AÇÕES*
+➤ #ban @user — Banir
+➤ #add 559999999999 — Adicionar
+➤ #promover @user — Tornar admin
+➤ #rebaixar @user — Remover admin
 ➤ #cargo @user [admin|mod|aux]
-➤ #mute @user
-➤ #desmute @user
+➤ #mute @user — Silenciar
+➤ #desmute @user — Dessilenciar
 
 ⚠️ *ADVERTÊNCIAS*
 ➤ #advertir @user [motivo]
 ➤ #checkwarnings @user
 ➤ #removewarnings @user
+➤ #advertidos — Ver todos
 ➤ #setlimitec [num]
 
 📢 *MARCAÇÃO*
 ➤ #marcar [texto]
 ➤ #tagall [texto]
 
-⚙️ *CONFIGURAÇÕES*
-➤ #bemvindo [on/off]
+🗑️ *DELETAR MENSAGEM*
+➤ #deletar (responda a msg)
+
+🚨 *LISTA NEGRA*
+➤ #listanegra add [num]
+➤ #listanegra rem [num]
+➤ #listanegra ver
+
+🔒 *GRUPO*
+➤ #fechargp — Fechar
+➤ #abrirgp — Abrir
+➤ #banghost — Remover inativos
+➤ #inativos [dias] — Ver inativos
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU FILTROS
+    // ===========================================================
+    if (sub === 'filtros') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
+      const s = isGroup ? getGroupSettings(groupId) : {};
+      return reply(`
+╔══════════════════╗
+     🛡️ MENU FILTROS 🛡️
+╚══════════════════╝
+
+🔗 *LINKS*
+➤ #antilink [on/off] — ${s.antilink ? '✅ ON' : '❌ OFF'}
+
+🤬 *PALAVRAS*
+➤ #antipalavra [on/off] — ${s.antiPalavra ? '✅ ON' : '❌ OFF'}
+➤ #addpalavra [palavra]
+➤ #delpalavra [palavra]
+➤ #listapalavrao
+
+💰 *VENDAS*
+➤ #antivendas [on/off] — ${s.antiVendas ? '✅ ON' : '❌ OFF'}
+
+📵 *SOMENTE ADMIN*
+➤ #so_adm [on/off] — ${s.soAdm ? '✅ ON' : '❌ OFF'}
+
+📞 *CHAMADAS*
+➤ #anticall [on/off] — ${s.anticall ? '✅ ON' : '❌ OFF'}
+
+👁️ *VIEW-ONCE*
+➤ #x9visuunica [on/off] — ${s.antiViewOnce ? '✅ ON' : '❌ OFF'}
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU BOAS-VINDAS
+    // ===========================================================
+    if (sub === 'boas-vindas' || sub === 'bemvindo' || sub === 'welcome') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
+      const s = isGroup ? getGroupSettings(groupId) : {};
+      return reply(`
+╔══════════════════╗
+     👋 MENU BOAS-VINDAS 👋
+╚══════════════════╝
+
+⚙️ *STATUS*
+➤ #bemvindo [on/off] — ${s.welcome ? '✅ Ativado' : '❌ Desativado'}
+
+📝 *MENSAGEM DE ENTRADA*
 ➤ #bemvindo_msg [texto]
+   Variáveis:
+   @user / @group / @membros
+   @desc / @numero
+
+🎨 *PERSONALIZAR CARD*
 ➤ #bemvindo_cor [hex]
+   Ex: #bemvindo_cor 0f172a
 ➤ #bemvindo_acento [hex]
+   Ex: #bemvindo_acento 6366f1
 ➤ #bemvindo_bg (+ imagem)
 ➤ #bemvindo_preview
-➤ #bemvindo_reset
-➤ #antilink [on/off]
-➤ #antivendas [on/off]
-➤ #so_adm [on/off]
-➤ #anticall [on/off]
-➤ #x9visuunica [on/off]
 
-🔒 *CONTROLE DO GRUPO*
-➤ #fechargp
-➤ #abrirgp
-➤ #banghost
-➤ #inativos [dias]
+🔁 *MENSAGEM DE SAÍDA*
+   (configurar no privado ou:)
+   envie: *saida [texto]* no privado
+
+🔄 *RESETAR*
+➤ #bemvindo_reset
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU AUTOMAÇÕES
+    // ===========================================================
+    if (sub === 'auto' || sub === 'automacoes' || sub === 'automações') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
+      return reply(`
+╔══════════════════╗
+     ⏰ MENU AUTOMAÇÕES ⏰
+╚══════════════════╝
+
+📅 *AGENDAMENTOS*
+➤ #agendar 30m [msg]
+➤ #agendar 2h [msg]
+➤ #agendar 08:00 [msg] — Diário
+➤ #agendar 08:00 seg,qua [msg]
+➤ #veragendamentos
+➤ #cancelaragendar [id]
+
+🕐 *ABERTURA/FECHAMENTO*
+➤ #opengp [HH:MM]
+➤ #closegp [HH:MM]
+➤ #rm_opengp — Remover horários
+
+💤 *STATUS AFK*
+➤ #ausente [mensagem]
+➤ #ativo
+➤ #listarafk
+
+🎵 *DOWNLOADS AUTO*
+➤ #autobaixar [on/off]
+
+🎂 *ANIVERSÁRIOS*
+➤ #aniversario [DD/MM]
+➤ #meuaniversario
+
+╔══════════════════╗
+      ⚡ SignaBOT ⚡
+╚══════════════════╝
+      `);
+    }
+
+    // ===========================================================
+    // MENU CONFIGURAÇÕES DO GRUPO
+    // ===========================================================
+    if (sub === 'config' || sub === 'configuracoes' || sub === 'configurações') {
+      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
+      return reply(`
+╔══════════════════╗
+     🔧 MENU CONFIG 🔧
+╚══════════════════╝
 
 📝 *GRUPO*
 ➤ #nomegp [nome]
 ➤ #descgp [desc]
 ➤ #linkgp
+➤ #gpinfo
+➤ #admins
+
+📋 *REGRAS & NOTAS*
 ➤ #regras [texto]
-
-🎵 *DOWNLOADS*
-➤ #mp3 [link] — Áudio (YouTube, TikTok...)
-➤ #mp4 [link] [qualidade] — Vídeo (240/360/480/720p)
-➤ #tiktok [link] — TikTok sem marca d'água
-➤ #ytinfo [link] — Info sem baixar
-
-🚫 *LISTA NEGRA*
-➤ #listanegra add [num]
-➤ #listanegra rem [num]
-➤ #listanegra ver
-
-🎯 *UTILIDADES*
-➤ #sorteio [texto]
-
-⏰ *MENSAGENS AUTOMÁTICAS*
-➤ #mensagem-automatica [HH:MM] [texto]
-➤ #listar-mensagens-automaticas
-➤ #limpar-mensagens-automaticas
-
-🗒️ *NOTAS*
+➤ #regras — Ver regras
 ➤ #anotar [texto]
 ➤ #anotacao
 ➤ #tirar_nota [num]
 
-🚨 *FILTRO DE PALAVRAS*
-➤ #antipalavra [on/off]
-➤ #addpalavra [palavra]
-➤ #delpalavra [palavra]
-➤ #listapalavrao
+🎯 *SORTEIO*
+➤ #sorteio [texto]
 
-💤 *STATUS*
-➤ #ausente [texto]
-➤ #ativo
+📊 *ATIVIDADE*
+➤ #rankativos
+➤ #inativos [dias]
+
+🎵 *DOWNLOADS*
+➤ #mp3 [link]
+➤ #mp4 [link] [qualidade]
+➤ #tiktok [link]
+➤ #ytinfo [link]
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
@@ -877,8 +1033,13 @@ Use sites como:
 Use #menu para ver
 os menus disponíveis:
 
-📌 #menu figurinhas
 📌 #menu admin
+📌 #menu mod
+📌 #menu filtros
+📌 #menu boas-vindas
+📌 #menu auto
+📌 #menu config
+📌 #menu figurinhas
 📌 #menu diversão
 📌 #menu grupo
 📌 #menu info
@@ -1296,20 +1457,9 @@ Use *#menu* para ver comandos disponíveis.`;
     if (!targetUser) return reply('❌ Mencione (reply) a mensagem do usuário que deseja banir!');
     
     try {
-      // Deletar a mensagem do usuário banido (a mensagem que foi respondida)
-      const quotedKey = message.message?.extendedTextMessage?.contextInfo;
-      if (quotedKey?.stanzaId) {
-        await sock.sendMessage(groupId, { delete: {
-          remoteJid: groupId,
-          fromMe: false,
-          id: quotedKey.stanzaId,
-          participant: quotedKey.participant,
-        }}).catch(() => {});
-      }
-      
-      // Remover o usuário do grupo
+      // Remover o usuário do grupo (sem deletar mensagem e sem enviar aviso)
       await sock.groupParticipantsUpdate(groupId, [targetUser], 'remove');
-      return reply(`✅ Usuário @${targetUser.split('@')[0]} banido com sucesso!`);
+      return;
     } catch (err) { return reply('❌ Erro ao banir: ' + err.message); }
   }
 
@@ -4442,17 +4592,31 @@ const connectBot = async () => {
     browser: ['SignaBot', 'Safari', '604.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 30000,
+    keepAliveIntervalMs: 10000,
     retryRequestDelayMs: 3000,
-    maxMsgRetryCount: 3,
+    maxMsgRetryCount: 5,
     emitOwnEvents: false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,
   });
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Manter bot ativo nos grupos com assinatura — envia presença a cada 5 minutos
+  const presenceInterval = setInterval(async () => {
+    try {
+      const allGroups = await sock.groupFetchAllParticipating();
+      for (const [gId] of Object.entries(allGroups)) {
+        const sub = checkSubscription(gId);
+        if (sub.active) {
+          await sock.presenceSubscribe(gId).catch(() => {});
+          await sock.sendPresenceUpdate('available', gId).catch(() => {});
+        }
+      }
+    } catch {}
+  }, 5 * 60 * 1000); // a cada 5 minutos
 
   // Agendamentos - verificar a cada 1 minuto
   const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
@@ -4473,6 +4637,7 @@ const connectBot = async () => {
     if (connection === 'close') {
       clearInterval(scheduleInterval);
       clearInterval(birthdayInterval);
+      clearInterval(presenceInterval);
 
       const statusCode = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode : 0;
@@ -4836,16 +5001,21 @@ const connectBot = async () => {
 ┌─────────────────────────┐
 │     *FUNÇÕES ON/OFF*      │
 ├─────────────────────────┤
-│ 1️⃣ Antilink      ${s.antilink ? '✅' : '❌'}     │
-│ 2️⃣ Bem-vindo     ${s.welcome ? '✅' : '❌'}     │
-│ 3️⃣ Anti Palavrão ${s.antiPalavra ? '✅' : '❌'}     │
-│ 4️⃣ Anti Vendas   ${s.antiVendas ? '✅' : '❌'}     │
-│ 5️⃣ Anti Call     ${s.anticall ? '✅' : '❌'}     │
-│ 6️⃣ Só Admin      ${s.soAdm ? '✅' : '❌'}     │
-│ 7️⃣ Anti ViewOnce ${s.antiViewOnce ? '✅' : '❌'}     │
-│ 8️⃣ Auto Baixar   ${s.autoBaixar ? '✅' : '❌'}     │
-│ 9️⃣ Anti Spam     ${s.antiSpam ? '✅' : '❌'}     │
-│ 🔟 Anti Imagem   ${s.antiImg ? '✅' : '❌'}     │
+│ 1  Antilink      ${s.antilink ? '✅ ON' : '❌ OFF'}    │
+│ 2  Bem-vindo     ${s.welcome ? '✅ ON' : '❌ OFF'}    │
+│ 3  Anti Palavrão ${s.antiPalavra ? '✅ ON' : '❌ OFF'}    │
+│ 4  Anti Vendas   ${s.antiVendas ? '✅ ON' : '❌ OFF'}    │
+│ 5  Anti Call     ${s.anticall ? '✅ ON' : '❌ OFF'}    │
+│ 6  Só Admin      ${s.soAdm ? '✅ ON' : '❌ OFF'}    │
+│ 7  Anti ViewOnce ${s.antiViewOnce ? '✅ ON' : '❌ OFF'}    │
+│ 8  Auto Baixar   ${s.autoBaixar ? '✅ ON' : '❌ OFF'}    │
+│ 9  Anti Spam     ${s.antiSpam ? '✅ ON' : '❌ OFF'}    │
+│ 10 Anti Imagem   ${s.antiImg ? '✅ ON' : '❌ OFF'}    │
+│ 11 Anti Vídeo    ${s.antiVideo ? '✅ ON' : '❌ OFF'}    │
+│ 12 Anti Áudio    ${s.antiAudio ? '✅ ON' : '❌ OFF'}    │
+│ 13 Anti Sticker  ${s.antiSticker ? '✅ ON' : '❌ OFF'}    │
+│ 14 Anti Doc      ${s.antiDoc ? '✅ ON' : '❌ OFF'}    │
+│ 15 Anti Contato  ${s.antiContato ? '✅ ON' : '❌ OFF'}    │
 └─────────────────────────┘
 
 ┌─────────────────────────┐
@@ -4907,11 +5077,23 @@ const connectBot = async () => {
 │ ➤ *sair* — Encerrar        │
 └─────────────────────────┘
 
+┌─────────────────────────┐
+│      *MODERAÇÃO*          │
+├─────────────────────────┤
+│ ➤ *banir* [numero]        │
+│ ➤ *veradv* — Advertências │
+│ ➤ *rmadv* [numero]        │
+│ ➤ *limitec* [num]         │
+│ ➤ *verpalavras*           │
+│ ➤ *addpalavra* [palavra]  │
+│ ➤ *delpalavra* [palavra]  │
+└─────────────────────────┘
+
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃      ⚡ *SignaBOT* ⚡       ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-💡 *Envie o número (1-10) para alternar funções*`;
+💡 *Envie o número (1-15) para alternar funções*`;
             return menu;
           };
           
@@ -4984,6 +5166,11 @@ const connectBot = async () => {
                 '8': { key: 'autoBaixar', name: 'Auto Baixar' },
                 '9': { key: 'antiSpam', name: 'Anti Spam' },
                 '10': { key: 'antiImg', name: 'Anti Imagem' },
+                '11': { key: 'antiVideo', name: 'Anti Video' },
+                '12': { key: 'antiAudio', name: 'Anti Audio' },
+                '13': { key: 'antiSticker', name: 'Anti Sticker' },
+                '14': { key: 'antiDoc', name: 'Anti Documento' },
+                '15': { key: 'antiContato', name: 'Anti Contato' },
               };
               
               if (toggleMap[input]) {
@@ -5628,6 +5815,113 @@ ${fullText}
                 continue;
               }
               
+              // === GERENCIAR PALAVROES (pelo privado) ===
+              if (input === 'verpalavras') {
+                const s2 = getGroupSettings(selectedGroupId);
+                const palavras = s2.palavroes || [];
+                if (!palavras.length) {
+                  await privateReply('Nenhuma palavra no filtro.\n\nUse: addpalavra [palavra]');
+                  continue;
+                }
+                await privateReply(`*Palavras filtradas — ${selectedGroupName}:*\n\n${palavras.join(', ')}\n\n*Para adicionar:* addpalavra [palavra]\n*Para remover:* delpalavra [palavra]`);
+                continue;
+              }
+              if (input.startsWith('addpalavra ')) {
+                const word = input.replace('addpalavra ', '').trim().toLowerCase();
+                const s2 = getGroupSettings(selectedGroupId);
+                if (!s2.palavroes) s2.palavroes = [];
+                if (!s2.palavroes.includes(word)) {
+                  s2.palavroes.push(word);
+                  saveSettings();
+                  logBotAction('addpalavra_private', `"${word}" em ${selectedGroupName}`);
+                  await privateReply(`Palavra *"${word}"* adicionada ao filtro de *${selectedGroupName}*!`);
+                } else {
+                  await privateReply(`Palavra *"${word}"* já está no filtro.`);
+                }
+                continue;
+              }
+              if (input.startsWith('delpalavra ')) {
+                const word = input.replace('delpalavra ', '').trim().toLowerCase();
+                const s2 = getGroupSettings(selectedGroupId);
+                s2.palavroes = (s2.palavroes || []).filter(p => p !== word);
+                saveSettings();
+                logBotAction('delpalavra_private', `"${word}" em ${selectedGroupName}`);
+                await privateReply(`Palavra *"${word}"* removida do filtro de *${selectedGroupName}*!`);
+                continue;
+              }
+              
+              // === DEFINIR LIMITE DE ADVERTÊNCIAS (pelo privado) ===
+              if (input.startsWith('limitec ')) {
+                const num = parseInt(input.replace('limitec ', '').trim());
+                if (isNaN(num) || num < 1) {
+                  await privateReply('Use: limitec [numero]\nEx: limitec 3');
+                  continue;
+                }
+                const s2 = getGroupSettings(selectedGroupId);
+                s2.warningLimit = num;
+                saveSettings();
+                logBotAction('set_limitec_private', `Limite ${num} em ${selectedGroupName}`);
+                await privateReply(`Limite de advertências definido para *${num}* em *${selectedGroupName}*!`);
+                continue;
+              }
+              
+              // === VER ADVERTÊNCIAS (pelo privado) ===
+              if (input === 'veradv' || input === 'advertencias') {
+                const grpWarns = warnings[selectedGroupId];
+                if (!grpWarns || !Object.keys(grpWarns).length) {
+                  await privateReply(`Nenhuma advertência registrada em *${selectedGroupName}*.`);
+                  continue;
+                }
+                let text = `*Advertências — ${selectedGroupName}:*\n\n`;
+                const s2 = getGroupSettings(selectedGroupId);
+                const limit = s2.warningLimit || 3;
+                Object.entries(grpWarns).forEach(([uid, warns]) => {
+                  if (warns.length > 0) {
+                    text += `📞 +${uid.split('@')[0]}: ${warns.length}/${limit} adv.\n`;
+                    warns.forEach((w, i) => {
+                      text += `   ${i+1}. ${w.motivo || 'Sem motivo'}\n`;
+                    });
+                    text += '\n';
+                  }
+                });
+                text += `\n*Para remover:* rmadv [numero]\nEx: rmadv 5592999999999`;
+                await privateReply(text);
+                continue;
+              }
+              
+              // === REMOVER ADVERTÊNCIAS POR NÚMERO (pelo privado) ===
+              if (input.startsWith('rmadv ')) {
+                const num = input.replace('rmadv ', '').trim().replace(/\D/g, '');
+                const uid = `${num}@s.whatsapp.net`;
+                if (warnings[selectedGroupId]) {
+                  delete warnings[selectedGroupId][uid];
+                  saveDB('warnings', warnings);
+                  logBotAction('rmadv_private', `+${num} em ${selectedGroupName}`);
+                  await privateReply(`Advertências de *+${num}* removidas em *${selectedGroupName}*!`);
+                } else {
+                  await privateReply(`Sem advertências para remover.`);
+                }
+                continue;
+              }
+              
+              // === BANIR POR NÚMERO (pelo privado) ===
+              if (input.startsWith('banir ')) {
+                const num = input.replace('banir ', '').trim().replace(/\D/g, '');
+                if (!num || num.length < 8) {
+                  await privateReply('Use: banir [numero com DDI]\nEx: banir 5592999999999');
+                  continue;
+                }
+                const uid = `${num}@s.whatsapp.net`;
+                try {
+                  await sock.groupParticipantsUpdate(selectedGroupId, [uid], 'remove');
+                  logBotAction('ban_private', `+${num} em ${selectedGroupName}`);
+                  await privateReply(`✅ Usuário *+${num}* banido de *${selectedGroupName}*!`);
+                } catch (err) {
+                  await privateReply(`❌ Erro ao banir: ${err.message}`);
+                }
+                continue;
+              }
+
               // === VER EXPIRAÇÃO DO PLANO (para admins) ===
               if (input === 'expira' || input === 'vencimento' || input === 'assinatura') {
                 const sub = checkSubscription(selectedGroupId);
@@ -5645,8 +5939,8 @@ ${fullText}
               }
               
               // === OPÇÃO NÃO RECONHECIDA ===
-              const validInputs = ['1','2','3','4','5','6','7','8','9','10','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar'];
-              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs '];
+              const validInputs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar','verpalavras','veradv','advertencias'];
+              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs ','addpalavra ','delpalavra ','limitec ','rmadv ','banir ','anunciar ','delproduto ','verprodutos','loja '];
               
               if (!validInputs.includes(input) && !startsValid.some(s => input.startsWith(s))) {
                 await privateReply(`Opcao nao reconhecida.\n\nEnvie *menu* para ver todas as opcoes.\nOu envie um *numero* (1-10) para ativar/desativar funcoes.`);
@@ -6067,10 +6361,50 @@ wa.me/${OWNER_NUMBER}
     if (action === 'remove') {
       for (const participant of participants) {
         if (settings.leaveMsg) {
-          await sock.sendMessage(groupId, {
-            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
-            mentions: [participant],
-          }).catch(() => {});
+          try {
+            const meta = await sock.groupMetadata(groupId);
+            const memberCount = meta.participants.length;
+            const rawNum = participant.split('@')[0];
+            let numFormatted = `+${rawNum}`;
+            if (rawNum.startsWith('55') && rawNum.length >= 12) {
+              const ddd = rawNum.substring(2, 4);
+              const rest = rawNum.substring(4);
+              numFormatted = rest.length >= 9
+                ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
+                : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
+            }
+            // Suporte a replaceVars com aliases em português
+            const leaveVars = {
+              user: `@${rawNum}`,
+              group: meta.subject || 'o grupo',
+              desc: meta.desc || '',
+              numero: numFormatted,
+              membros: String(memberCount),
+            };
+            let leaveText = settings.leaveMsg;
+            // Substituições manuais adicionais para compatibilidade
+            leaveText = leaveText
+              .replace(/\{nome\}/gi, `@${rawNum}`)
+              .replace(/@nome/gi, `@${rawNum}`)
+              .replace(/\{numero\}/gi, numFormatted)
+              .replace(/\{membros\}/gi, String(memberCount))
+              .replace(/\{total\}/gi, String(memberCount))
+              .replace(/\{group\}/gi, meta.subject || 'o grupo')
+              .replace(/\{grupo\}/gi, meta.subject || 'o grupo')
+              .replace(/@group/gi, meta.subject || 'o grupo')
+              .replace(/@grupo/gi, meta.subject || 'o grupo')
+              .replace(/\{user\}/gi, `@${rawNum}`)
+              .replace(/@user/gi, `@${rawNum}`);
+            await sock.sendMessage(groupId, {
+              text: leaveText,
+              mentions: [participant],
+            }).catch(() => {});
+          } catch {
+            await sock.sendMessage(groupId, {
+              text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
+              mentions: [participant],
+            }).catch(() => {});
+          }
         }
       }
     }
