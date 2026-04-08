@@ -102,8 +102,6 @@ let customCmds    = loadDB('customCmds');   // { groupId: { cmdName: { text, ima
 let privateConfig = loadDB('privateConfig'); // { oderId: { selectedGroup, step } }
 let botLogs       = loadDB('botLogs');       // { errors: [], actions: [] }
 let groupHistory  = loadDB('groupHistory');  // { groupId: { hadTrial, hadPaid, ownerNumbers: [] } }
-let shopProducts  = loadDB('shopProducts');  // { groupId: { productId: { title, desc, price, image, seller, createdAt } } }
-let shopSettings  = loadDB('shopSettings');  // { groupId: { enabled: true/false } }
 
 // Inicializar logs se necessário
 if (!botLogs.errors) botLogs.errors = [];
@@ -374,21 +372,15 @@ if (command === '#status') {
 ➤ Prefixos: # / !
 
 📌 *MENUS DISPONÍVEIS*
-➤ #menu admin     — Painel de admin
-➤ #menu mod       — Moderação
-➤ #menu filtros   — Filtros automáticos
-➤ #menu boas-vindas — Bem-vindo/saída
-➤ #menu auto      — Automações
-➤ #menu config    — Configurações grupo
 ➤ #menu figurinhas
+➤ #menu download
+➤ #menu admin
 ➤ #menu diversão
 ➤ #menu grupo
 ➤ #menu info
 ➤ #menu gold
 ➤ #menu tecnologia
 ➤ #menu comandos
-➤ #menu loja
-➤ #menu utilidades
 
 ⚡ *COMANDOS RÁPIDOS*
 ➤ #ping
@@ -434,7 +426,7 @@ if (command === '#status') {
     }
 
     // ===========================================================
-    // MENU DOWNLOAD (REMOVIDO)
+    // MENU DOWNLOAD
     // ===========================================================
     if (sub === 'download') {
       return reply(`
@@ -442,25 +434,23 @@ if (command === '#status') {
      📥 MENU DOWNLOAD 📥
 ╚══════════════════╝
 
-⚠️ *AVISO IMPORTANTE*
+▶️ *YOUTUBE*
+➤ #play [nome/url]
+➤ #playvideo [nome]
+➤ #ytsearch [busca]
 
-Os comandos de download foram
-removidos temporariamente devido
-a instabilidade das APIs externas.
+📱 *TIKTOK*
+➤ #tiktok [url]
 
-📌 *Comandos afetados:*
-• #play / #playvideo
-• #tiktok
-• #instagram  
-• #spotify / #letra
-• #pinterest
-• #ytsearch
+📸 *INSTAGRAM*
+➤ #instagram [url]
 
-🔧 *Alternativas:*
-Use sites como:
-• y2mate.com
-• savefrom.net
-• ssstik.io
+🎵 *MÚSICAS*
+➤ #letra [música]
+➤ #spotify [nome]
+
+🖼️ *IMAGENS*
+➤ #pinterest [busca]
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
@@ -469,81 +459,7 @@ Use sites como:
     }
 
     // ===========================================================
-    // MENU LOJA
-    // ===========================================================
-    if (sub === 'loja' || sub === 'shop') {
-      return reply(`
-╔══════════════════╗
-     🛒 MENU LOJA 🛒
-╚══════════════════╝
-
-🏪 *ANUNCIAR PRODUTOS*
-➤ #anunciar [título]
-   Preço: R$ XX
-   [descrição]
-   (envie com imagem!)
-
-📦 *VER PRODUTOS*
-➤ #produtos — Ver todos
-➤ #produto [id] — Detalhes
-➤ #meusprodutos — Seus anúncios
-
-🗑️ *GERENCIAR*
-➤ #deletarproduto [id]
-
-⚙️ *ADMIN*
-➤ #loja on — Ativar loja
-➤ #loja off — Desativar loja
-
-💡 *DICAS*
-• Inclua preço na descrição
-• Use imagens de qualidade
-• Descreva bem o produto
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU UTILIDADES
-    // ===========================================================
-    if (sub === 'utilidades' || sub === 'util') {
-      return reply(`
-╔══════════════════╗
-    🛠️ MENU UTILIDADES 🛠️
-╚══════════════════╝
-
-📍 *LOCALIZAÇÃO*
-➤ #cep [CEP]
-➤ #clima [cidade]
-
-📊 *CÁLCULOS*
-➤ #imc [peso] [altura]
-➤ #calculadora [expressão]
-
-🔮 *DIVERSOS*
-➤ #signo [DD/MM]
-➤ #horario
-➤ #traduzir [idioma] [texto]
-
-⏰ *AGENDAMENTO*
-➤ #agendar 30m [msg] — Em 30 min
-➤ #agendar 2h [msg] — Em 2 horas
-➤ #agendar 08:00 [msg] — Diário
-➤ #agendar 08:00 seg,qua [msg]
-➤ #veragendamentos
-➤ #cancelaragendar [id]
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU ADMIN (dividido em submenus)
+    // MENU ADMIN
     // ===========================================================
     if (sub === 'admin' || sub === 'adm') {
       if (!cargoCheck(groupId, 'admin', 'mod')) {
@@ -566,235 +482,84 @@ Use sites como:
      🤖 MENU ADMIN 🤖
 ╚══════════════════╝
 
-📌 *ESCOLHA UMA CATEGORIA:*
-
-👥 *#menu mod* — Moderação
-   Ban, add, mute, advertências...
-
-🛡️ *#menu filtros* — Filtros automáticos
-   Antilink, anti palavrão, anti vendas...
-
-👋 *#menu boas-vindas* — Boas-vindas
-   Mensagens de entrada e saída...
-
-⏰ *#menu auto* — Automações
-   Agendamentos, abertura/fechamento...
-
-🔧 *#menu config* — Configurações
-   Grupo, regras, links, informações...
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU MODERAÇÃO
-    // ===========================================================
-    if (sub === 'mod' || sub === 'moderacao' || sub === 'moderação') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
-      return reply(`
-╔══════════════════╗
-     👮 MENU MODERAÇÃO 👮
-╚══════════════════╝
-
-🚫 *AÇÕES*
-➤ #ban @user — Banir
-➤ #add 559999999999 — Adicionar
-➤ #promover @user — Tornar admin
-➤ #rebaixar @user — Remover admin
+👥 *GERENCIAR MEMBROS*
+➤ #ban @user
+➤ #add 559999999999
+➤ #promover @user
+➤ #rebaixar @user
 ➤ #cargo @user [admin|mod|aux]
-➤ #mute @user — Silenciar
-➤ #desmute @user — Dessilenciar
+➤ #mute @user
+➤ #desmute @user
 
 ⚠️ *ADVERTÊNCIAS*
 ➤ #advertir @user [motivo]
 ➤ #checkwarnings @user
 ➤ #removewarnings @user
-➤ #advertidos — Ver todos
 ➤ #setlimitec [num]
 
 📢 *MARCAÇÃO*
 ➤ #marcar [texto]
 ➤ #tagall [texto]
 
-🗑️ *DELETAR MENSAGEM*
-➤ #deletar (responda a msg)
-
-🚨 *LISTA NEGRA*
-➤ #listanegra add [num]
-➤ #listanegra rem [num]
-➤ #listanegra ver
-
-🔒 *GRUPO*
-➤ #fechargp — Fechar
-➤ #abrirgp — Abrir
-➤ #banghost — Remover inativos
-➤ #inativos [dias] — Ver inativos
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU FILTROS
-    // ===========================================================
-    if (sub === 'filtros') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
-      const s = isGroup ? getGroupSettings(groupId) : {};
-      return reply(`
-╔══════════════════╗
-     🛡️ MENU FILTROS 🛡️
-╚══════════════════╝
-
-🔗 *LINKS*
-➤ #antilink [on/off] — ${s.antilink ? '✅ ON' : '❌ OFF'}
-
-🤬 *PALAVRAS*
-➤ #antipalavra [on/off] — ${s.antiPalavra ? '✅ ON' : '❌ OFF'}
-➤ #addpalavra [palavra]
-➤ #delpalavra [palavra]
-➤ #listapalavrao
-
-💰 *VENDAS*
-➤ #antivendas [on/off] — ${s.antiVendas ? '✅ ON' : '❌ OFF'}
-
-📵 *SOMENTE ADMIN*
-➤ #so_adm [on/off] — ${s.soAdm ? '✅ ON' : '❌ OFF'}
-
-📞 *CHAMADAS*
-➤ #anticall [on/off] — ${s.anticall ? '✅ ON' : '❌ OFF'}
-
-👁️ *VIEW-ONCE*
-➤ #x9visuunica [on/off] — ${s.antiViewOnce ? '✅ ON' : '❌ OFF'}
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU BOAS-VINDAS
-    // ===========================================================
-    if (sub === 'boas-vindas' || sub === 'bemvindo' || sub === 'welcome') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
-      const s = isGroup ? getGroupSettings(groupId) : {};
-      return reply(`
-╔══════════════════╗
-     👋 MENU BOAS-VINDAS 👋
-╚══════════════════╝
-
-⚙️ *STATUS*
-➤ #bemvindo [on/off] — ${s.welcome ? '✅ Ativado' : '❌ Desativado'}
-
-📝 *MENSAGEM DE ENTRADA*
+⚙️ *CONFIGURAÇÕES*
+➤ #bemvindo [on/off]
 ➤ #bemvindo_msg [texto]
-   Variáveis:
-   @user / @group / @membros
-   @desc / @numero
-
-🎨 *PERSONALIZAR CARD*
 ➤ #bemvindo_cor [hex]
-   Ex: #bemvindo_cor 0f172a
 ➤ #bemvindo_acento [hex]
-   Ex: #bemvindo_acento 6366f1
 ➤ #bemvindo_bg (+ imagem)
 ➤ #bemvindo_preview
-
-🔁 *MENSAGEM DE SAÍDA*
-   (configurar no privado ou:)
-   envie: *saida [texto]* no privado
-
-🔄 *RESETAR*
 ➤ #bemvindo_reset
+➤ #antilink [on/off]
+➤ #antivendas [on/off]
+➤ #so_adm [on/off]
+➤ #anticall [on/off]
+➤ #x9visuunica [on/off]
 
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU AUTOMAÇÕES
-    // ===========================================================
-    if (sub === 'auto' || sub === 'automacoes' || sub === 'automações') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
-      return reply(`
-╔══════════════════╗
-     ⏰ MENU AUTOMAÇÕES ⏰
-╚══════════════════╝
-
-📅 *AGENDAMENTOS*
-➤ #agendar 30m [msg]
-➤ #agendar 2h [msg]
-➤ #agendar 08:00 [msg] — Diário
-➤ #agendar 08:00 seg,qua [msg]
-➤ #veragendamentos
-➤ #cancelaragendar [id]
-
-🕐 *ABERTURA/FECHAMENTO*
-➤ #opengp [HH:MM]
-➤ #closegp [HH:MM]
-➤ #rm_opengp — Remover horários
-
-💤 *STATUS AFK*
-➤ #ausente [mensagem]
-➤ #ativo
-➤ #listarafk
-
-🎵 *DOWNLOADS AUTO*
-➤ #autobaixar [on/off]
-
-🎂 *ANIVERSÁRIOS*
-➤ #aniversario [DD/MM]
-➤ #meuaniversario
-
-╔══════════════════╗
-      ⚡ SignaBOT ⚡
-╚══════════════════╝
-      `);
-    }
-
-    // ===========================================================
-    // MENU CONFIGURAÇÕES DO GRUPO
-    // ===========================================================
-    if (sub === 'config' || sub === 'configuracoes' || sub === 'configurações') {
-      if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Acesso negado.');
-      return reply(`
-╔══════════════════╗
-     🔧 MENU CONFIG 🔧
-╚══════════════════╝
+🔒 *CONTROLE DO GRUPO*
+➤ #fechargp
+➤ #abrirgp
+➤ #banghost
+➤ #inativos [dias]
 
 📝 *GRUPO*
 ➤ #nomegp [nome]
 ➤ #descgp [desc]
 ➤ #linkgp
-➤ #gpinfo
-➤ #admins
-
-📋 *REGRAS & NOTAS*
 ➤ #regras [texto]
-➤ #regras — Ver regras
+
+🎵 *DOWNLOADS*
+➤ #mp3 [link] — Áudio (YouTube, TikTok...)
+➤ #mp4 [link] [qualidade] — Vídeo (240/360/480/720p)
+➤ #tiktok [link] — TikTok sem marca d'água
+➤ #ytinfo [link] — Info sem baixar
+
+🚫 *LISTA NEGRA*
+➤ #listanegra add [num]
+➤ #listanegra rem [num]
+➤ #listanegra ver
+
+🎯 *UTILIDADES*
+➤ #sorteio [texto]
+
+⏰ *MENSAGENS AUTOMÁTICAS*
+➤ #mensagem-automatica [HH:MM] [texto]
+➤ #listar-mensagens-automaticas
+➤ #limpar-mensagens-automaticas
+
+🗒️ *NOTAS*
 ➤ #anotar [texto]
 ➤ #anotacao
 ➤ #tirar_nota [num]
 
-🎯 *SORTEIO*
-➤ #sorteio [texto]
+🚨 *FILTRO DE PALAVRAS*
+➤ #antipalavra [on/off]
+➤ #addpalavra [palavra]
+➤ #delpalavra [palavra]
+➤ #listapalavrao
 
-📊 *ATIVIDADE*
-➤ #rankativos
-➤ #inativos [dias]
-
-🎵 *DOWNLOADS*
-➤ #mp3 [link]
-➤ #mp4 [link] [qualidade]
-➤ #tiktok [link]
-➤ #ytinfo [link]
+💤 *STATUS*
+➤ #ausente [texto]
+➤ #ativo
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
@@ -1033,21 +798,15 @@ Use sites como:
 Use #menu para ver
 os menus disponíveis:
 
-📌 #menu admin
-📌 #menu mod
-📌 #menu filtros
-📌 #menu boas-vindas
-📌 #menu auto
-📌 #menu config
 📌 #menu figurinhas
+📌 #menu download
+📌 #menu admin
 📌 #menu diversão
 📌 #menu grupo
 📌 #menu info
 📌 #menu gold
 📌 #menu tecnologia
 📌 #menu comandos
-📌 #menu loja
-📌 #menu utilidades
 
 ╔══════════════════╗
       ⚡ SignaBOT ⚡
@@ -1404,28 +1163,370 @@ os menus disponíveis:
   }
 
   // ===========================================================
-  // DOWNLOADS (DESATIVADOS)
+  // DOWNLOADS
   // ===========================================================
 
-  // Comandos de download foram removidos por instabilidade das APIs
-  const downloadRemovedMsg = `⚠️ *Comando temporariamente desativado*
+  if (command === '#play' || command === '#ytmp3') {
+    if (args.length === 0) return reply('Use: #play [nome ou URL da musica]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
 
-Os comandos de download foram removidos devido a instabilidade das APIs externas.
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando audio...`);
 
-🔧 *Alternativas sugeridas:*
-• y2mate.com (YouTube)
-• savefrom.net (Vários)
-• ssstik.io (TikTok)
+      // APIs de fallback para áudio
+      const ytAudioApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=audio`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
 
-Use *#menu* para ver comandos disponíveis.`;
+      let audioUrl = null;
+      for (const apiFn of ytAudioApis) {
+        try { audioUrl = await apiFn(); if (audioUrl) break; } catch {}
+      }
+      if (!audioUrl) return reply('Nao foi possivel obter o audio. Tente novamente mais tarde.');
 
-  if (['#play', '#ytmp3', '#playvideo', '#ytmp4', '#ytsearch', '#spotify', '#letra', '#pinterest', '#instagram'].includes(command)) {
-    return reply(downloadRemovedMsg);
+      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 });
+      const buffer = Buffer.from(audioResp.data);
+
+      await sock.sendMessage(groupId, {
+        audio: buffer,
+        mimetype: 'audio/mpeg',
+        ptt: false,
+      }, { quoted: message });
+
+      await sock.sendMessage(groupId, {
+        image: { url: video.thumbnail },
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}\nViews: ${video.views}`,
+      });
+    } catch (err) { return reply('Erro ao baixar audio: ' + err.message); }
+    return;
   }
 
-  // #tiktok e #tt - DESATIVADO
-  if (command === '#tiktok' || command === '#tt') {
-    return reply(downloadRemovedMsg);
+  if (command === '#playvideo' || command === '#ytmp4') {
+    if (args.length === 0) return reply('Use: #playvideo [nome ou URL]');
+    const query = args.join(' ');
+    await reply('Buscando: ' + query + '...');
+    try {
+      const results = await yts(query);
+      const video = results.videos[0];
+      if (!video) return reply('Nenhum resultado encontrado.');
+
+      if (video.seconds > 600) return reply('Video muito longo (max 10 minutos).');
+
+      await reply(`Encontrado: *${video.title}*\nDuracao: ${video.timestamp}\nBaixando video...`);
+
+      // APIs de fallback para vídeo
+      const ytVideoApis = [
+        async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/ytdl?url=${encodeURIComponent(video.url)}&type=video`, { timeout: 30000 });
+          return data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.data?.url || data?.url || null;
+        },
+        async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
+          return data?.url || data?.data?.url || null;
+        },
+      ];
+
+      let videoUrl = null;
+      for (const apiFn of ytVideoApis) {
+        try { videoUrl = await apiFn(); if (videoUrl) break; } catch {}
+      }
+      if (!videoUrl) return reply('Nao foi possivel obter o video. Tente novamente mais tarde.');
+
+      const videoResp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120000 });
+      const buffer = Buffer.from(videoResp.data);
+
+      await sock.sendMessage(groupId, {
+        video: buffer,
+        caption: `*${video.title}*\nDuracao: ${video.timestamp}`,
+      }, { quoted: message });
+    } catch (err) { return reply('Erro ao baixar video: ' + err.message); }
+    return;
+  }
+
+  if (command === '#ytsearch') {
+    if (args.length === 0) return reply('Use: #ytsearch [busca]');
+    try {
+      const results = await yts(args.join(' '));
+      const videos = results.videos.slice(0, 5);
+      if (!videos.length) return reply('Nenhum resultado.');
+      let text = '*Resultados no YouTube:*\n\n';
+      videos.forEach((v, i) => {
+        text += `${i + 1}. *${v.title}*\nDuracao: ${v.timestamp}\nURL: ${v.url}\n\n`;
+      });
+      return reply(text);
+    } catch { return reply('Erro na busca.'); }
+  }
+
+ // #tiktok - Baixar vídeo do TikTok (COM MÚLTIPLAS APIS DE FALLBACK)
+if (command === '#tiktok' || command === '#tt') {
+  if (args.length === 0) return reply('❌ Use: #tiktok [URL do vídeo]\nExemplo: #tiktok https://tiktok.com/@user/video/123456');
+  
+  const url = args[0];
+  
+  // Validar URL do TikTok
+  if (!url.includes('tiktok.com')) {
+    return reply('❌ URL inválida! Certifique-se de enviar um link do TikTok.');
+  }
+
+  await reply('⏳ *Baixando vídeo do TikTok...*\n\nIsso pode levar alguns segundos.');
+
+  // Lista de APIs para tentar (em ordem de confiabilidade)
+  const apis = [
+    {
+      name: 'API TikDown',
+      url: `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video?.noWatermark || data?.video?.no_wm || data?.video?.[0]
+    },
+    {
+      name: 'API TikWM',
+      url: `https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.data?.play || data?.data?.wmplay
+    },
+    {
+      name: 'API TikDown2',
+      url: `https://api.tikdown.xyz/api/download?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.result?.video?.no_watermark
+    },
+    {
+      name: 'API TikMate',
+      url: `https://api.tikmate.cc/api?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video_url
+    },
+    {
+      name: 'API SSSTik',
+      url: `https://api.ssstik.io/video?url=${encodeURIComponent(url)}`,
+      getVideo: (data) => data?.video
+    }
+  ];
+
+  // Tentar cada API
+  for (const api of apis) {
+    try {
+      console.log(`[TIKTOK] Tentando API: ${api.name}`);
+      
+      const response = await axios.get(api.url, { 
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const data = response.data;
+      const videoUrl = api.getVideo(data);
+
+      if (videoUrl) {
+        console.log(`[TIKTOK] ✅ API ${api.name} funcionou!`);
+
+        // Baixar o vídeo
+        const videoResp = await axios.get(videoUrl, { 
+          responseType: 'arraybuffer', 
+          timeout: 60000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        // Obter informações do vídeo
+        const author = data?.author?.nickname || data?.data?.author?.nickname || 'TikTok User';
+        const caption = data?.caption || data?.data?.title || 'Vídeo do TikTok';
+        const views = data?.play_count || data?.data?.play_count || '0';
+
+        // Enviar o vídeo
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: `📱 *TikTok*\n\n👤 *Autor:* ${author}\n📝 *Descrição:* ${caption}\n👁️ *Views:* ${views}\n\n✅ Download realizado com sucesso!`,
+          mentions: [sender]
+        }, { quoted: message });
+
+        return; // Sai da função se funcionou
+      }
+    } catch (err) {
+      console.log(`[TIKTOK] ❌ API ${api.name} falhou:`, err.message);
+      continue; // Tenta a próxima API
+    }
+  }
+
+  // Se todas as APIs falharem, tenta um método alternativo
+  try {
+    console.log('[TIKTOK] Tentando método alternativo...');
+    
+    // Extrair ID do vídeo da URL
+    const videoId = url.match(/\d{15,}/)?.[0] || url.match(/video\/(\d+)/)?.[1];
+    
+    if (videoId) {
+      // Usar API alternativa
+      const altUrl = `https://tiktok-video-no-watermark-download.p.rapidapi.com/tiktok?url=https://www.tiktok.com/@user/video/${videoId}`;
+      
+      const response = await axios.get(altUrl, {
+        timeout: 15000,
+        headers: {
+          'X-RapidAPI-Key': 'sua-chave-aqui', // Você precisaria de uma chave
+          'X-RapidAPI-Host': 'tiktok-video-no-watermark-download.p.rapidapi.com'
+        }
+      });
+
+      if (response.data?.videoUrl) {
+        const videoResp = await axios.get(response.data.videoUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000
+        });
+
+        const buffer = Buffer.from(videoResp.data);
+
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: '📱 *TikTok*\n\n✅ Download realizado com sucesso!'
+        }, { quoted: message });
+
+        return;
+      }
+    }
+  } catch (err) {
+    console.log('[TIKTOK] ❌ Método alternativo falhou:', err.message);
+  }
+
+  // Se tudo falhar, mostrar instruções
+  return reply(`❌ *Erro ao baixar TikTok*\n\nNão foi possível baixar o vídeo no momento. As APIs estão instáveis.\n\n💡 *Sugestões:*\n1️⃣ Tente novamente mais tarde\n2️⃣ Use o comando #instagram para vídeos do Instagram\n3️⃣ Use #play para músicas do YouTube\n\n📱 *Link:* ${url}`);
+}
+
+  if (command === '#instagram' || command === '#insta') {
+    if (args.length === 0) return reply('Use: #instagram [URL]');
+    const url = args[0];
+    if (!url.includes('instagram.com')) return reply('❌ URL invalida. Envie um link do Instagram.');
+    await reply('⏳ Baixando do Instagram...');
+
+    // Lista de APIs para tentar
+    const instaApis = [
+      {
+        name: 'xteam',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.xteam.xyz/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          if (!data?.url) return null;
+          return { mediaUrl: data.url, isVideo: data.type === 'video' };
+        }
+      },
+      {
+        name: 'siputzx',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          const isVideo = link.includes('.mp4') || data?.data?.[0]?.type === 'video';
+          return { mediaUrl: link, isVideo };
+        }
+      },
+      {
+        name: 'ryzendesu',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/igdl?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.[0]?.url || data?.url;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: link.includes('.mp4') };
+        }
+      },
+      {
+        name: 'tikwm-ig',
+        fetch: async () => {
+          const { data } = await axios.get(`https://api.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 20000 });
+          const link = data?.data?.play || data?.data?.wmplay;
+          if (!link) return null;
+          return { mediaUrl: link, isVideo: true };
+        }
+      },
+    ];
+
+    for (const api of instaApis) {
+      try {
+        console.log(`[INSTAGRAM] Tentando API: ${api.name}`);
+        const result = await api.fetch();
+        if (!result?.mediaUrl) continue;
+
+        const mediaResp = await axios.get(result.mediaUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        const buffer = Buffer.from(mediaResp.data);
+
+        if (result.isVideo) {
+          await sock.sendMessage(groupId, { video: buffer, caption: '📸 Instagram' }, { quoted: message });
+        } else {
+          await sock.sendMessage(groupId, { image: buffer, caption: '📸 Instagram' }, { quoted: message });
+        }
+        console.log(`[INSTAGRAM] ✅ API ${api.name} funcionou!`);
+        return;
+      } catch (err) {
+        console.log(`[INSTAGRAM] ❌ API ${api.name} falhou:`, err.message);
+      }
+    }
+
+    return reply('❌ Nao foi possivel baixar o conteudo do Instagram.\n\nVerifique se:\n• O link e valido\n• O perfil e publico\n• Tente novamente mais tarde');
+  }
+
+  if (command === '#pinterest') {
+    if (args.length === 0) return reply('Use: #pinterest [busca]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.xteam.xyz/pinterest?search=${encodeURIComponent(query)}`,
+        { timeout: 15000 }
+      );
+      if (!data?.result?.length) return reply('Nenhuma imagem encontrada.');
+      const img = data.result[Math.floor(Math.random() * Math.min(data.result.length, 5))];
+      await sock.sendMessage(groupId, { image: { url: img }, caption: `Pinterest: ${query}` }, { quoted: message });
+    } catch { return reply('Erro ao buscar no Pinterest.'); }
+    return;
+  }
+
+  if (command === '#letra') {
+    if (args.length === 0) return reply('Use: #letra [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://api.vagalume.com.br/search.php?q=${encodeURIComponent(query)}&apikey=09f9e8f8`,
+        { timeout: 10000 }
+      );
+      if (data.type === 'notfound') return reply('Letra nao encontrada.');
+      const music = data.response?.docs?.[0];
+      if (!music) return reply('Letra nao encontrada.');
+      const letra = music.text.substring(0, 1500);
+      return reply(`*${music.band.name} - ${music.name}*\n\n${letra}${music.text.length > 1500 ? '\n\n[Continua...]' : ''}`);
+    } catch { return reply('Erro ao buscar letra.'); }
+  }
+
+  if (command === '#spotify') {
+    if (args.length === 0) return reply('Use: #spotify [nome da musica]');
+    const query = args.join(' ');
+    try {
+      const { data } = await axios.get(
+        `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=1`,
+        { timeout: 10000 }
+      );
+      const song = data?.data?.results?.[0];
+      if (!song) return reply('Musica nao encontrada.');
+      return reply(`*${song.name}*\nArtista: ${song.artists?.primary?.map(a => a.name).join(', ') || '-'}\nAlbum: ${song.album?.name || '-'}\nDuracao: ${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, '0')}`);
+    } catch { return reply('Erro ao buscar no Spotify.'); }
   }
 
   if (command === '#autobaixar') {
@@ -1457,9 +1558,20 @@ Use *#menu* para ver comandos disponíveis.`;
     if (!targetUser) return reply('❌ Mencione (reply) a mensagem do usuário que deseja banir!');
     
     try {
-      // Remover o usuário do grupo (sem deletar mensagem e sem enviar aviso)
+      // Deletar a mensagem do usuário banido (a mensagem que foi respondida)
+      const quotedKey = message.message?.extendedTextMessage?.contextInfo;
+      if (quotedKey?.stanzaId) {
+        await sock.sendMessage(groupId, { delete: {
+          remoteJid: groupId,
+          fromMe: false,
+          id: quotedKey.stanzaId,
+          participant: quotedKey.participant,
+        }}).catch(() => {});
+      }
+      
+      // Remover o usuário do grupo
       await sock.groupParticipantsUpdate(groupId, [targetUser], 'remove');
-      return;
+      return reply(`✅ Usuário @${targetUser.split('@')[0]} banido com sucesso!`);
     } catch (err) { return reply('❌ Erro ao banir: ' + err.message); }
   }
 
@@ -1947,412 +2059,10 @@ if (command === '#sorteio') {
   }
 }
 
-  // ===========================================================
-  // SISTEMA DE LOJINHA COMPLETO
-  // ===========================================================
-
-  // #loja on/off - Ativar/desativar loja
-  if (command === '#loja') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    if (args[0] === 'on') {
-      if (!shopSettings[groupId]) shopSettings[groupId] = {};
-      shopSettings[groupId].enabled = true;
-      saveDB('shopSettings', shopSettings);
-      return reply(`✅ *Loja Ativada!*\n\nAgora os membros podem:\n• #anunciar — Criar anúncios\n• #produtos — Ver produtos\n• #meusprodutos — Ver seus anúncios`);
-    }
-    
-    if (args[0] === 'off') {
-      if (!shopSettings[groupId]) shopSettings[groupId] = {};
-      shopSettings[groupId].enabled = false;
-      saveDB('shopSettings', shopSettings);
-      return reply('❌ Loja desativada.');
-    }
-    
-    const status = shopSettings[groupId]?.enabled ? '✅ Ativada' : '❌ Desativada';
-    const totalProducts = shopProducts[groupId] ? Object.keys(shopProducts[groupId]).length : 0;
-    
-    return reply(`🛒 *Status da Loja*\n\nStatus: ${status}\nProdutos: ${totalProducts}\n\nUse: #loja on/off`);
-  }
-
-  // #anunciar - Criar anúncio
-  if (command === '#anunciar') {
-    if (!shopSettings[groupId]?.enabled) {
-      return reply('❌ A loja está desativada neste grupo.\nPeça a um admin para usar: #loja on');
-    }
-    
-    // Pegar texto completo preservando formatação
-    const fullText = args.join(' ');
-    if (!fullText || fullText.length < 10) {
-      return reply(`❌ *Como criar anúncio:*\n\n#anunciar [título]\nPreço: R$ XX\n[descrição do produto]\n\n💡 *Dica:* Envie com uma imagem para destacar seu anúncio!`);
-    }
-    
-    // Verificar se tem imagem
-    const imageMsg = message.message?.imageMessage;
-    let imagePath = null;
-    
-    if (imageMsg) {
-      try {
-        const buffer = await downloadMedia(imageMsg, 'image');
-        if (buffer) {
-          const imgDir = path.join(DATA_DIR, 'shop_images');
-          if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
-          imagePath = path.join(imgDir, `${Date.now()}_${sender.split('@')[0]}.jpg`);
-          fs.writeFileSync(imagePath, buffer);
-        }
-      } catch (e) {
-        console.log('[SHOP] Erro ao salvar imagem:', e.message);
-      }
-    }
-    
-    // Criar produto
-    const productId = 'prod_' + Date.now().toString(36);
-    if (!shopProducts[groupId]) shopProducts[groupId] = {};
-    
-    shopProducts[groupId][productId] = {
-      title: fullText.split('\n')[0].substring(0, 100),
-      description: fullText,
-      imagePath,
-      seller: sender,
-      sellerName: senderName,
-      createdAt: Date.now(),
-      active: true
-    };
-    
-    saveDB('shopProducts', shopProducts);
-    
-    // Gerar selo de anúncio bonito
-    const anuncioMsg = `
-╔════════════════════════╗
-      🏷️ *NOVO ANÚNCIO* 🏷️
-╚════════════════════════╝
-
-${fullText}
-
-━━━━━━━━━━━━━━━━━━━━━━
-👤 *Vendedor:* @${sender.split('@')[0]}
-🆔 *ID:* ${productId}
-📅 *Data:* ${new Date().toLocaleDateString('pt-BR')}
-━━━━━━━━━━━━━━━━━━━━━━
-
-💬 *Interessado?* Chame o vendedor!
-📋 Use #produto ${productId} para detalhes
-
-╔════════════════════════╗
-      🛒 *LOJA SignaBOT* 🛒
-╚════════════════════════╝`;
-
-    if (imagePath && fs.existsSync(imagePath)) {
-      await sock.sendMessage(groupId, {
-        image: fs.readFileSync(imagePath),
-        caption: anuncioMsg,
-        mentions: [sender]
-      });
-    } else {
-      await sock.sendMessage(groupId, {
-        text: anuncioMsg,
-        mentions: [sender]
-      });
-    }
-    return;
-  }
-
-  // #produtos - Ver todos os produtos
-  if (command === '#produtos') {
-    const products = shopProducts[groupId];
-    if (!products || !Object.keys(products).length) {
-      return reply('📦 *Nenhum produto anunciado ainda!*\n\nSeja o primeiro: #anunciar [texto]');
-    }
-    
-    let text = `
-╔════════════════════════╗
-      🛒 *PRODUTOS DO GRUPO* 🛒
-╚════════════════════════╝
-
-`;
-    
-    const productList = Object.entries(products).filter(([, p]) => p.active !== false);
-    
-    if (!productList.length) {
-      return reply('📦 *Nenhum produto ativo no momento!*');
-    }
-    
-    productList.slice(0, 10).forEach(([id, product], i) => {
-      const title = product.title || product.description.split('\n')[0];
-      const shortTitle = title.length > 40 ? title.substring(0, 40) + '...' : title;
-      const hasImg = product.imagePath ? '📸' : '';
-      const date = new Date(product.createdAt).toLocaleDateString('pt-BR');
-      
-      text += `${i + 1}. ${hasImg} *${shortTitle}*\n   🆔 ${id}\n   👤 ${product.sellerName || 'Vendedor'}\n   📅 ${date}\n\n`;
-    });
-    
-    if (productList.length > 10) {
-      text += `\n... e mais ${productList.length - 10} produtos.`;
-    }
-    
-    text += `\n━━━━━━━━━━━━━━━━━━━━━━
-📋 *Ver detalhes:* #produto [id]
-📦 *Seus anúncios:* #meusprodutos`;
-    
-    return reply(text);
-  }
-
-  // #produto [id] - Ver detalhes de um produto
-  if (command === '#produto') {
-    if (!args[0]) return reply('❌ Use: #produto [id]\nEx: #produto prod_abc123');
-    
-    const productId = args[0];
-    const product = shopProducts[groupId]?.[productId];
-    
-    if (!product) {
-      return reply('❌ Produto não encontrado!\n\nUse #produtos para ver a lista.');
-    }
-    
-    const detailMsg = `
-╔════════════════════════╗
-      📦 *DETALHES DO PRODUTO* 📦
-╚════════════════════════╝
-
-${product.description}
-
-━━━━━━━━━━━━━━━━━━━━━━
-👤 *Vendedor:* @${product.seller.split('@')[0]}
-🆔 *ID:* ${productId}
-📅 *Anunciado em:* ${new Date(product.createdAt).toLocaleDateString('pt-BR')}
-━━━━━━━━━━━━━━━━━━━━━━
-
-💬 *Chame o vendedor para negociar!*
-
-╔════════════════════════╗
-      🛒 *LOJA SignaBOT* 🛒
-╚════════════════════════╝`;
-
-    if (product.imagePath && fs.existsSync(product.imagePath)) {
-      await sock.sendMessage(groupId, {
-        image: fs.readFileSync(product.imagePath),
-        caption: detailMsg,
-        mentions: [product.seller]
-      });
-    } else {
-      await sock.sendMessage(groupId, {
-        text: detailMsg,
-        mentions: [product.seller]
-      });
-    }
-    return;
-  }
-
-  // #meusprodutos - Ver seus próprios anúncios
-  if (command === '#meusprodutos') {
-    const products = shopProducts[groupId];
-    if (!products) {
-      return reply('📦 *Você não tem anúncios!*\n\nCrie um: #anunciar [texto]');
-    }
-    
-    const myProducts = Object.entries(products).filter(([, p]) => p.seller === sender && p.active !== false);
-    
-    if (!myProducts.length) {
-      return reply('📦 *Você não tem anúncios ativos!*\n\nCrie um: #anunciar [texto]');
-    }
-    
-    let text = `
-╔════════════════════════╗
-      📦 *SEUS ANÚNCIOS* 📦
-╚════════════════════════╝
-
-`;
-    
-    myProducts.forEach(([id, product], i) => {
-      const title = product.title || product.description.split('\n')[0];
-      const shortTitle = title.length > 40 ? title.substring(0, 40) + '...' : title;
-      const date = new Date(product.createdAt).toLocaleDateString('pt-BR');
-      
-      text += `${i + 1}. *${shortTitle}*\n   🆔 ${id}\n   📅 ${date}\n\n`;
-    });
-    
-    text += `\n━━━━━━━━━━━━━━━━━━━━━━
-🗑️ *Deletar:* #deletarproduto [id]`;
-    
-    return reply(text);
-  }
-
-  // #deletarproduto [id] - Remover anúncio
-  if (command === '#deletarproduto') {
-    if (!args[0]) return reply('❌ Use: #deletarproduto [id]\nEx: #deletarproduto prod_abc123');
-    
-    const productId = args[0];
-    const product = shopProducts[groupId]?.[productId];
-    
-    if (!product) {
-      return reply('❌ Produto não encontrado!');
-    }
-    
-    // Verificar se é o dono ou admin
-    if (product.seller !== sender && !adminCheck && !ownerCheck) {
-      return reply('❌ Apenas o vendedor ou admins podem deletar este anúncio!');
-    }
-    
-    // Deletar imagem se existir
-    if (product.imagePath && fs.existsSync(product.imagePath)) {
-      try { fs.unlinkSync(product.imagePath); } catch {}
-    }
-    
-    delete shopProducts[groupId][productId];
-    saveDB('shopProducts', shopProducts);
-    
-    return reply(`✅ Anúncio *${productId}* deletado com sucesso!`);
-  }
-
-  // ===========================================================
-  // AGENDAMENTO DE MENSAGENS MELHORADO
-  // ===========================================================
-
-  // #agendar - Sistema completo de agendamento
-  if (command === '#agendar') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    
-    if (args.length < 2) {
-      return reply(`⏰ *Sistema de Agendamento*\n\n📌 *Por minutos:*\n#agendar 30m Mensagem aqui\n\n📌 *Por horas:*\n#agendar 2h Mensagem aqui\n\n📌 *Horário fixo (diário):*\n#agendar 08:00 Bom dia!\n\n📌 *Com dias específicos:*\n#agendar 08:00 seg,qua,sex Bom dia!\n\n📌 *Dias válidos:*\nseg, ter, qua, qui, sex, sab, dom`);
-    }
-    
-    const timeArg = args[0];
-    let msgContent = '';
-    let scheduleType = '';
-    let scheduleTime = '';
-    let scheduleDays = 'todos';
-    let executeAt = null;
-    
-    // Verificar se é por minutos (ex: 30m)
-    if (/^\d+m$/i.test(timeArg)) {
-      const minutes = parseInt(timeArg);
-      if (minutes < 1 || minutes > 1440) {
-        return reply('❌ Minutos deve ser entre 1 e 1440 (24h)');
-      }
-      executeAt = Date.now() + (minutes * 60000);
-      msgContent = args.slice(1).join(' ');
-      scheduleType = 'once';
-      scheduleTime = `${minutes} minuto(s)`;
-    }
-    // Verificar se é por horas (ex: 2h)
-    else if (/^\d+h$/i.test(timeArg)) {
-      const hours = parseInt(timeArg);
-      if (hours < 1 || hours > 168) {
-        return reply('❌ Horas deve ser entre 1 e 168 (7 dias)');
-      }
-      executeAt = Date.now() + (hours * 3600000);
-      msgContent = args.slice(1).join(' ');
-      scheduleType = 'once';
-      scheduleTime = `${hours} hora(s)`;
-    }
-    // Verificar se é horário fixo (ex: 08:00)
-    else if (/^\d{2}:\d{2}$/.test(timeArg)) {
-      scheduleTime = timeArg;
-      scheduleType = 'daily';
-      
-      // Verificar se tem dias específicos
-      const possibleDays = args[1]?.toLowerCase();
-      const daysPattern = /^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*$/;
-      
-      if (possibleDays && daysPattern.test(possibleDays)) {
-        scheduleDays = possibleDays;
-        msgContent = args.slice(2).join(' ');
-      } else {
-        msgContent = args.slice(1).join(' ');
-      }
-    } else {
-      return reply('❌ Formato inválido!\n\nUse:\n• #agendar 30m [msg]\n• #agendar 2h [msg]\n• #agendar 08:00 [msg]\n• #agendar 08:00 seg,qua [msg]');
-    }
-    
-    if (!msgContent || msgContent.trim().length === 0) {
-      return reply('❌ Você precisa informar a mensagem a ser enviada!');
-    }
-    
-    // Criar o agendamento
-    const schedId = 'sch_' + Date.now().toString(36);
-    if (!schedules[groupId]) schedules[groupId] = {};
-    
-    schedules[groupId][schedId] = {
-      type: scheduleType,
-      time: scheduleTime,
-      days: scheduleDays,
-      text: msgContent, // Texto preservado exatamente como enviado
-      executeAt,
-      creator: sender,
-      createdAt: Date.now(),
-      active: true
-    };
-    
-    saveDB('schedules', schedules);
-    
-    let confirmMsg = `✅ *Mensagem Agendada!*\n\n`;
-    confirmMsg += `🆔 *ID:* ${schedId}\n`;
-    
-    if (scheduleType === 'once') {
-      const execDate = new Date(executeAt);
-      confirmMsg += `⏰ *Será enviada em:* ${scheduleTime}\n`;
-      confirmMsg += `📅 *Data/Hora:* ${execDate.toLocaleString('pt-BR')}\n`;
-    } else {
-      confirmMsg += `⏰ *Horário:* ${scheduleTime}\n`;
-      confirmMsg += `📅 *Dias:* ${scheduleDays === 'todos' ? 'Todos os dias' : scheduleDays}\n`;
-    }
-    
-    confirmMsg += `\n📝 *Mensagem:*\n${msgContent.substring(0, 200)}${msgContent.length > 200 ? '...' : ''}`;
-    
-    return reply(confirmMsg);
-  }
-
-  // #veragendamentos - Ver agendamentos
-  if (command === '#veragendamentos' || command === '#agendamentos') {
-    const scheds = schedules[groupId];
-    if (!scheds || !Object.keys(scheds).length) {
-      return reply('📅 *Nenhum agendamento ativo!*\n\nCrie um: #agendar');
-    }
-    
-    let text = `
-╔════════════════════════╗
-    ⏰ *AGENDAMENTOS ATIVOS* ⏰
-╚════════════════════════╝
-
-`;
-    
-    const schedList = Object.entries(scheds).filter(([, s]) => s.active !== false);
-    
-    schedList.forEach(([id, sched], i) => {
-      const preview = sched.text.substring(0, 50) + (sched.text.length > 50 ? '...' : '');
-      const typeIcon = sched.type === 'once' ? '🔔' : '🔁';
-      
-      text += `${i + 1}. ${typeIcon} *${id}*\n`;
-      text += `   ⏰ ${sched.time}`;
-      if (sched.days && sched.days !== 'todos') text += ` (${sched.days})`;
-      text += `\n   📝 ${preview}\n\n`;
-    });
-    
-    text += `━━━━━━━━━━━━━━━━━━━━━━
-🗑️ *Cancelar:* #cancelaragendar [id]`;
-    
-    return reply(text);
-  }
-
-  // #cancelaragendar [id] - Cancelar agendamento
-  if (command === '#cancelaragendar') {
-    if (!cargoCheck(groupId, 'admin', 'mod')) return reply('❌ Sem permissão.');
-    if (!args[0]) return reply('❌ Use: #cancelaragendar [id]');
-    
-    const schedId = args[0];
-    if (!schedules[groupId]?.[schedId]) {
-      return reply('❌ Agendamento não encontrado!');
-    }
-    
-    delete schedules[groupId][schedId];
-    saveDB('schedules', schedules);
-    
-    return reply(`✅ Agendamento *${schedId}* cancelado!`);
-  }
-
-  // MENSAGENS AGENDADAS (antigo - mantido para compatibilidade)
+  // MENSAGENS AGENDADAS
   if (command === '#mensagem-automatica') {
     if (!cargoCheck(groupId, 'admin', 'mod')) return reply('Sem permissao.');
-    if (args.length < 2) return reply('Use: #agendar [tempo] [texto]\nEx: #agendar 08:00 Bom dia!');
+    if (args.length < 2) return reply('Use: #mensagem-automatica [HH:MM] [texto]\nEx: #mensagem-automatica 08:00 Bom dia!');
     const time = args[0];
     const text = args.slice(1).join(' ');
     if (!/^\d{2}:\d{2}$/.test(time)) return reply('Formato de hora invalido. Use HH:MM\nEx: 08:00');
@@ -4464,77 +4174,32 @@ const handleGroupEvents = async (sock, events) => {
   if (!events['groups.update']) return;
 };
 
-// Checar horarios de abertura/fechamento automatico e agendamentos
+// Checar horarios de abertura/fechamento automatico
 const checkScheduledTimes = async (sock) => {
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  
-  // Mapear dias da semana para abreviações
-  const dayMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-  const currentDay = dayMap[now.getDay()];
 
   for (const [groupId, settings] of Object.entries(groupSettings)) {
     // Abrir grupo
     if (settings.openAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'not_announcement');
-        await sock.sendMessage(groupId, { text: '🌅 *O grupo abriu automaticamente!*\n\nBom dia a todos!' });
+        await sock.sendMessage(groupId, { text: 'O grupo abriu automaticamente! Bom dia a todos!' });
       } catch {}
     }
     // Fechar grupo
     if (settings.closeAt === timeStr) {
       try {
         await sock.groupSettingUpdate(groupId, 'announcement');
-        await sock.sendMessage(groupId, { text: '🌙 *O grupo fechou automaticamente.*\n\nAté amanhã!' });
+        await sock.sendMessage(groupId, { text: 'O grupo fechou automaticamente. Ate amanha!' });
       } catch {}
     }
-    // Mensagens automaticas (sistema antigo)
+    // Mensagens automaticas
     const msgs = autoMessages[groupId];
     if (msgs && msgs.length) {
       for (const m of msgs) {
         if (m.time === timeStr) {
           try { await sock.sendMessage(groupId, { text: m.text }); } catch {}
-        }
-      }
-    }
-  }
-  
-  // Novo sistema de agendamentos
-  for (const [groupId, groupSchedules] of Object.entries(schedules)) {
-    for (const [schedId, sched] of Object.entries(groupSchedules)) {
-      if (!sched.active) continue;
-      
-      let shouldSend = false;
-      
-      // Agendamento único (por minutos/horas)
-      if (sched.type === 'once' && sched.executeAt) {
-        if (now.getTime() >= sched.executeAt) {
-          shouldSend = true;
-          // Marcar como inativo após enviar
-          sched.active = false;
-          saveDB('schedules', schedules);
-        }
-      }
-      
-      // Agendamento diário
-      if (sched.type === 'daily' && sched.time === timeStr) {
-        // Verificar se é o dia certo
-        if (sched.days === 'todos' || !sched.days) {
-          shouldSend = true;
-        } else {
-          const scheduledDays = sched.days.split(',').map(d => d.trim().toLowerCase());
-          if (scheduledDays.includes(currentDay)) {
-            shouldSend = true;
-          }
-        }
-      }
-      
-      if (shouldSend) {
-        try {
-          await sock.sendMessage(groupId, { text: sched.text });
-          console.log(`[SCHEDULE] Mensagem ${schedId} enviada para ${groupId}`);
-        } catch (err) {
-          console.log(`[SCHEDULE] Erro ao enviar ${schedId}: ${err.message}`);
         }
       }
     }
@@ -4592,31 +4257,17 @@ const connectBot = async () => {
     browser: ['SignaBot', 'Safari', '604.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 10000,
+    keepAliveIntervalMs: 30000,
     retryRequestDelayMs: 3000,
-    maxMsgRetryCount: 5,
+    maxMsgRetryCount: 3,
     emitOwnEvents: false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: false,
   });
 
   sock.ev.on('creds.update', saveCreds);
-
-  // Manter bot ativo nos grupos com assinatura — envia presença a cada 5 minutos
-  const presenceInterval = setInterval(async () => {
-    try {
-      const allGroups = await sock.groupFetchAllParticipating();
-      for (const [gId] of Object.entries(allGroups)) {
-        const sub = checkSubscription(gId);
-        if (sub.active) {
-          await sock.presenceSubscribe(gId).catch(() => {});
-          await sock.sendPresenceUpdate('available', gId).catch(() => {});
-        }
-      }
-    } catch {}
-  }, 5 * 60 * 1000); // a cada 5 minutos
 
   // Agendamentos - verificar a cada 1 minuto
   const scheduleInterval = setInterval(() => checkScheduledTimes(sock), 60000);
@@ -4637,7 +4288,6 @@ const connectBot = async () => {
     if (connection === 'close') {
       clearInterval(scheduleInterval);
       clearInterval(birthdayInterval);
-      clearInterval(presenceInterval);
 
       const statusCode = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode : 0;
@@ -4982,118 +4632,70 @@ const connectBot = async () => {
             const cmdCount = customCmds[gId] ? Object.keys(customCmds[gId]).length : 0;
             
             // Contar mensagens agendadas
-            const schedCount = schedules[gId] ? Object.keys(schedules[gId]).length : 0;
-            const autoMsgCount = autoMessages[gId] ? Object.keys(autoMessages[gId]).length : 0;
-            
-            // Contar produtos da loja
-            const shopCount = shopProducts[gId] ? Object.keys(shopProducts[gId]).length : 0;
-            const shopEnabled = shopSettings[gId]?.enabled ? '✅' : '❌';
+            const schedCount = autoMessages[gId] ? Object.keys(autoMessages[gId]).length : 0;
 
-            // Painel diferenciado para dono vs admin comum
             let menu = `
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃   ⚙️ *PAINEL DE CONTROLE* ⚙️
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+╔══════════════════════════╗
+  ⚙️ *${gName}*
+╚══════════════════════════╝
 
-📌 *Grupo:* ${gName}
 📊 *Assinatura:* ${subInfo}
 
-┌─────────────────────────┐
-│     *FUNÇÕES ON/OFF*      │
-├─────────────────────────┤
-│ 1  Antilink      ${s.antilink ? '✅ ON' : '❌ OFF'}    │
-│ 2  Bem-vindo     ${s.welcome ? '✅ ON' : '❌ OFF'}    │
-│ 3  Anti Palavrão ${s.antiPalavra ? '✅ ON' : '❌ OFF'}    │
-│ 4  Anti Vendas   ${s.antiVendas ? '✅ ON' : '❌ OFF'}    │
-│ 5  Anti Call     ${s.anticall ? '✅ ON' : '❌ OFF'}    │
-│ 6  Só Admin      ${s.soAdm ? '✅ ON' : '❌ OFF'}    │
-│ 7  Anti ViewOnce ${s.antiViewOnce ? '✅ ON' : '❌ OFF'}    │
-│ 8  Auto Baixar   ${s.autoBaixar ? '✅ ON' : '❌ OFF'}    │
-│ 9  Anti Spam     ${s.antiSpam ? '✅ ON' : '❌ OFF'}    │
-│ 10 Anti Imagem   ${s.antiImg ? '✅ ON' : '❌ OFF'}    │
-│ 11 Anti Vídeo    ${s.antiVideo ? '✅ ON' : '❌ OFF'}    │
-│ 12 Anti Áudio    ${s.antiAudio ? '✅ ON' : '❌ OFF'}    │
-│ 13 Anti Sticker  ${s.antiSticker ? '✅ ON' : '❌ OFF'}    │
-│ 14 Anti Doc      ${s.antiDoc ? '✅ ON' : '❌ OFF'}    │
-│ 15 Anti Contato  ${s.antiContato ? '✅ ON' : '❌ OFF'}    │
-└─────────────────────────┘
+━━━ *FUNÇÕES* ━━━━━━━━━━━━
+1️⃣ Antilink: ${s.antilink ? '✅' : '❌'}
+2️⃣ Bem-vindo: ${s.welcome ? '✅' : '❌'}
+3️⃣ Anti Palavrão: ${s.antiPalavra ? '✅' : '❌'}
+4️⃣ Anti Vendas: ${s.antiVendas ? '✅' : '❌'}
+5️⃣ Anti Call: ${s.anticall ? '✅' : '❌'}
+6️⃣ Só Admin: ${s.soAdm ? '✅' : '❌'}
+7️⃣ Anti View Once: ${s.antiViewOnce ? '✅' : '❌'}
+8️⃣ Auto Baixar: ${s.autoBaixar ? '✅' : '❌'}
+9️⃣ Anti Spam: ${s.antiSpam ? '✅' : '❌'}
+🔟 Anti Imagem: ${s.antiImg ? '✅' : '❌'}
 
-┌─────────────────────────┐
-│      *MENSAGENS*          │
-├─────────────────────────┤
-│ ➤ *bemvindo* [msg]        │
-│   ${s.welcomeMsg ? '✅ Definido' : '⚪ Padrão'}
-│ ➤ *saida* [msg]           │
-│   ${s.leaveMsg ? '✅ Definido' : '⚪ Padrão'}
-│ ➤ *regras* [texto]        │
-│   ${rules[gId] ? '✅ Definido' : '⚪ Não definido'}
-└─────────────────────────┘
+━━━ *TEXTOS* ━━━━━━━━━━━━━
+➤ *bemvindo* [msg] — Texto de boas-vindas
+   Atual: ${s.welcomeMsg ? s.welcomeMsg.substring(0, 50) + '...' : 'Padrão'}
+➤ *saida* [msg] — Texto de saída
+   Atual: ${s.leaveMsg ? s.leaveMsg.substring(0, 50) + '...' : 'Padrão'}
+➤ *regras* [texto] — Definir regras
+   Atual: ${rules[gId] ? 'Definido' : 'Não definido'}
 
-┌─────────────────────────┐
-│     *AGENDAMENTOS*        │
-├─────────────────────────┤
-│ 📅 Total: ${schedCount + autoMsgCount} agendamento(s)
-│ ➤ *veragenda* — Ver lista  │
-│ ➤ *agenda* HH:MM [msg]     │
-│ ➤ *agenda* 30m [msg]       │
-│ ➤ *delagenda* [id]         │
-│                            │
-│ ⏰ Abrir: ${s.openAt || '—'}
-│ ⏰ Fechar: ${s.closeAt || '—'}
-│ ➤ *abrir* / *fechar* HH:MM │
-└─────────────────────────┘
+━━━ *HORÁRIOS* ━━━━━━━━━━━
+➤ *abrir* HH:MM — Abrir grupo
+   Atual: ${s.openAt || 'Não definido'}
+➤ *fechar* HH:MM — Fechar grupo
+   Atual: ${s.closeAt || 'Não definido'}
 
-┌─────────────────────────┐
-│        *LOJA*             │
-├─────────────────────────┤
-│ Status: ${shopEnabled}
-│ 📦 Produtos: ${shopCount}
-│ ➤ *loja* on/off           │
-└─────────────────────────┘
+━━━ *COMANDOS PERSONALIZADOS* ━━━
+📝 Total: ${cmdCount} comando(s)
+➤ *vercmd* — Ver comandos do grupo
+➤ *addcmd* [nome] [texto] — Criar comando
+➤ *delcmd* [nome] — Deletar comando
 
-┌─────────────────────────┐
-│  *COMANDOS PERSONALIZADOS* │
-├─────────────────────────┤
-│ 📝 Total: ${cmdCount} comando(s)
-│ ➤ *vercmd* — Ver lista     │
-│ ➤ *addcmd* [nome] [texto]  │
-│ ➤ *delcmd* [nome]          │
-└─────────────────────────┘
+━━━ *MENSAGENS AGENDADAS* ━━━━
+📅 Total: ${schedCount} agendamento(s)
+➤ *veragenda* — Ver agendamentos
+➤ *agenda* HH:MM [texto] — Agendar msg
+➤ *delagenda* [id] — Remover agendamento
 
-┌─────────────────────────┐
-│      *NAVEGAÇÃO*          │
-├─────────────────────────┤`;
+━━━ *NAVEGAÇÃO* ━━━━━━━━━━`;
 
             if (ownerPrivate) {
               menu += `
-│ ➤ *plano* — Assinatura     │
-│ ➤ *logs* — Logs do bot     │
-│ ➤ *stats* — Estatísticas   │`;
+➤ *plano* — Gerenciar assinatura
+➤ *logs* — Ver logs de erros do bot
+➤ *stats* — Estatísticas do grupo`;
             }
 
             menu += `
-│ ➤ *trocar* — Mudar grupo   │
-│ ➤ *menu* — Este menu       │
-│ ➤ *sair* — Encerrar        │
-└─────────────────────────┘
+➤ *trocar* — Mudar de grupo
+➤ *menu* — Exibir este menu novamente
+➤ *sair* — Encerrar configuração
 
-┌─────────────────────────┐
-│      *MODERAÇÃO*          │
-├─────────────────────────┤
-│ ➤ *banir* [numero]        │
-│ ➤ *veradv* — Advertências │
-│ ➤ *rmadv* [numero]        │
-│ ➤ *limitec* [num]         │
-│ ➤ *verpalavras*           │
-│ ➤ *addpalavra* [palavra]  │
-│ ➤ *delpalavra* [palavra]  │
-└─────────────────────────┘
-
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃      ⚡ *SignaBOT* ⚡       ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
-💡 *Envie o número (1-15) para alternar funções*`;
+╔══════════════════════════╗
+        ⚡ *SignaBOT* ⚡
+╚══════════════════════════╝`;
             return menu;
           };
           
@@ -5166,11 +4768,6 @@ const connectBot = async () => {
                 '8': { key: 'autoBaixar', name: 'Auto Baixar' },
                 '9': { key: 'antiSpam', name: 'Anti Spam' },
                 '10': { key: 'antiImg', name: 'Anti Imagem' },
-                '11': { key: 'antiVideo', name: 'Anti Video' },
-                '12': { key: 'antiAudio', name: 'Anti Audio' },
-                '13': { key: 'antiSticker', name: 'Anti Sticker' },
-                '14': { key: 'antiDoc', name: 'Anti Documento' },
-                '15': { key: 'antiContato', name: 'Anti Contato' },
               };
               
               if (toggleMap[input]) {
@@ -5301,262 +4898,69 @@ const connectBot = async () => {
                 continue;
               }
               
-              // === LOJA ON/OFF (pelo privado) ===
-              if (input === 'loja on') {
-                if (!shopSettings[selectedGroupId]) shopSettings[selectedGroupId] = {};
-                shopSettings[selectedGroupId].enabled = true;
-                saveDB('shopSettings', shopSettings);
-                await privateReply(`✅ Loja ativada em *${selectedGroupName}*!`);
-                continue;
-              }
-              
-              if (input === 'loja off') {
-                if (!shopSettings[selectedGroupId]) shopSettings[selectedGroupId] = {};
-                shopSettings[selectedGroupId].enabled = false;
-                saveDB('shopSettings', shopSettings);
-                await privateReply(`❌ Loja desativada em *${selectedGroupName}*.`);
-                continue;
-              }
-              
-              // === VER PRODUTOS DA LOJA (pelo privado) ===
-              if (input === 'verprodutos' || input === 'produtos') {
-                const products = shopProducts[selectedGroupId];
-                if (!products || !Object.keys(products).length) {
-                  await privateReply(`📦 Nenhum produto anunciado em *${selectedGroupName}*.\n\nUse: anunciar [título]\\nPreço: R$ XX\\n[descrição]`);
-                  continue;
-                }
-                
-                let text = `🛒 *Produtos em ${selectedGroupName}:*\n\n`;
-                const productList = Object.entries(products).filter(([, p]) => p.active !== false);
-                
-                productList.slice(0, 15).forEach(([id, product], i) => {
-                  const title = product.title || product.description?.split('\n')[0] || 'Sem título';
-                  const shortTitle = title.length > 35 ? title.substring(0, 35) + '...' : title;
-                  text += `${i + 1}. *${shortTitle}*\n   🆔 ${id}\n   👤 ${product.sellerName || 'Vendedor'}\n\n`;
-                });
-                
-                text += `\n━━━━━━━━━━━━\n🗑️ *Deletar:* delproduto [id]`;
-                await privateReply(text);
-                continue;
-              }
-              
-              // === CRIAR ANÚNCIO (pelo privado) ===
-              if (input.startsWith('anunciar ')) {
-                if (!shopSettings[selectedGroupId]?.enabled) {
-                  await privateReply('❌ A loja está desativada neste grupo.\nUse: loja on');
-                  continue;
-                }
-                
-                const fullText = rawInput.substring(9);
-                if (!fullText || fullText.length < 10) {
-                  await privateReply('❌ Use: anunciar [título]\\nPreço: R$ XX\\n[descrição]');
-                  continue;
-                }
-                
-                const productId = 'prod_' + Date.now().toString(36);
-                if (!shopProducts[selectedGroupId]) shopProducts[selectedGroupId] = {};
-                
-                shopProducts[selectedGroupId][productId] = {
-                  title: fullText.split('\n')[0].substring(0, 100),
-                  description: fullText,
-                  imagePath: null,
-                  seller: privateSender,
-                  sellerName: 'Admin (PV)',
-                  createdAt: Date.now(),
-                  active: true
-                };
-                
-                saveDB('shopProducts', shopProducts);
-                logBotAction('anunciar_private', `${productId} em ${selectedGroupName}`);
-                
-                // Enviar anúncio no grupo também
-                const anuncioMsg = `
-╔════════════════════════╗
-      🏷️ *NOVO ANÚNCIO* 🏷️
-╚════════════════════════╝
-
-${fullText}
-
-━━━━━━━━━━━━━━━━━━━━━━
-🆔 *ID:* ${productId}
-📅 *Data:* ${new Date().toLocaleDateString('pt-BR')}
-━━━━━━━━━━━━━━━━━━━━━━
-
-💬 *Interessado?* Contate o vendedor!
-
-╔════════════════════════╗
-      🛒 *LOJA SignaBOT* 🛒
-╚════════════════════════╝`;
-
-                try {
-                  await sock.sendMessage(selectedGroupId, { text: anuncioMsg });
-                } catch {}
-                
-                await privateReply(`✅ Anúncio criado!\n\n🆔 ID: ${productId}\n📌 Título: ${fullText.split('\n')[0]}\n\nO anúncio foi enviado no grupo *${selectedGroupName}*.`);
-                continue;
-              }
-              
-              // === DELETAR PRODUTO (pelo privado) ===
-              if (input.startsWith('delproduto ')) {
-                const productId = input.replace('delproduto ', '').trim();
-                if (!shopProducts[selectedGroupId]?.[productId]) {
-                  await privateReply(`❌ Produto *${productId}* não encontrado.\nUse *produtos* para ver a lista.`);
-                  continue;
-                }
-                
-                const product = shopProducts[selectedGroupId][productId];
-                if (product.imagePath && fs.existsSync(product.imagePath)) {
-                  try { fs.unlinkSync(product.imagePath); } catch {}
-                }
-                
-                delete shopProducts[selectedGroupId][productId];
-                saveDB('shopProducts', shopProducts);
-                logBotAction('delproduto_private', `${productId} em ${selectedGroupName}`);
-                
-                await privateReply(`✅ Produto *${productId}* deletado!`);
-                continue;
-              }
-              
               // === VER AGENDAMENTOS ===
               if (input === 'veragenda' || input === 'agendamentos') {
-                const newScheds = schedules[selectedGroupId] || {};
-                const oldScheds = autoMessages[selectedGroupId] || {};
-                const allScheds = { ...newScheds };
-                
-                // Adicionar mensagens antigas ao objeto
-                if (Array.isArray(oldScheds)) {
-                  oldScheds.forEach((m, i) => {
-                    allScheds[`old_${i}`] = { time: m.time, text: m.text, type: 'daily', days: 'todos', active: true };
-                  });
-                } else {
-                  Object.assign(allScheds, oldScheds);
-                }
-                
-                if (!Object.keys(allScheds).length) {
-                  await privateReply('📅 Nenhum agendamento neste grupo.\n\n*Criar agendamento:*\n• agenda 30m [msg] — Em 30 min\n• agenda 2h [msg] — Em 2 horas\n• agenda 08:00 [msg] — Diário\n• agenda 08:00 seg,qua [msg] — Dias específicos');
+                const scheds = autoMessages[selectedGroupId];
+                if (!scheds || !Object.keys(scheds).length) {
+                  await privateReply('Nenhuma mensagem agendada neste grupo.\n\nUse: agenda HH:MM [texto]');
                   continue;
                 }
-                
-                let text = `⏰ *Agendamentos — ${selectedGroupName}:*\n\n`;
-                Object.entries(allScheds).filter(([, s]) => s.active !== false).forEach(([id, sched], i) => {
-                  const preview = sched.text ? (sched.text.length > 40 ? sched.text.substring(0, 40) + '...' : sched.text) : 'Sem texto';
-                  const typeIcon = sched.type === 'once' ? '🔔' : '🔁';
-                  text += `${i + 1}. ${typeIcon} *${id}*\n   ⏰ ${sched.time}${sched.days && sched.days !== 'todos' ? ` (${sched.days})` : ''}\n   📝 ${preview}\n\n`;
+                let text = `*Mensagens agendadas — ${selectedGroupName}:*\n\n`;
+                Object.entries(scheds).forEach(([id, sched], i) => {
+                  const preview = sched.text ? (sched.text.length > 50 ? sched.text.substring(0, 50) + '...' : sched.text) : 'Sem texto';
+                  text += `*${i + 1}.* ID: ${id}\n   Horario: ${sched.time}\n   Dias: ${sched.days || 'Todos'}\n   Texto: ${preview}\n   Status: ${sched.active !== false ? 'Ativo' : 'Pausado'}\n\n`;
                 });
-                text += '━━━━━━━━━━━━\n🗑️ *Remover:* delagenda [id]';
+                text += 'Para remover: delagenda [id]';
                 await privateReply(text);
                 continue;
               }
               
-              // === AGENDAR MENSAGEM (sistema melhorado) ===
+              // === AGENDAR MENSAGEM ===
               if (input.startsWith('agenda ')) {
                 const parts = rawInput.substring(7).trim();
-                const timeArg = parts.split(/\s+/)[0];
-                let msgContent = '';
-                let scheduleType = '';
-                let scheduleTime = '';
-                let scheduleDays = 'todos';
-                let executeAt = null;
-                
-                // Por minutos (ex: 30m)
-                if (/^\d+m$/i.test(timeArg)) {
-                  const minutes = parseInt(timeArg);
-                  if (minutes < 1 || minutes > 1440) {
-                    await privateReply('❌ Minutos deve ser entre 1 e 1440 (24h)');
-                    continue;
-                  }
-                  executeAt = Date.now() + (minutes * 60000);
-                  msgContent = parts.substring(timeArg.length).trim();
-                  scheduleType = 'once';
-                  scheduleTime = `${minutes} minuto(s)`;
-                }
-                // Por horas (ex: 2h)
-                else if (/^\d+h$/i.test(timeArg)) {
-                  const hours = parseInt(timeArg);
-                  if (hours < 1 || hours > 168) {
-                    await privateReply('❌ Horas deve ser entre 1 e 168 (7 dias)');
-                    continue;
-                  }
-                  executeAt = Date.now() + (hours * 3600000);
-                  msgContent = parts.substring(timeArg.length).trim();
-                  scheduleType = 'once';
-                  scheduleTime = `${hours} hora(s)`;
-                }
-                // Horário fixo (ex: 08:00)
-                else if (/^\d{2}:\d{2}$/.test(timeArg)) {
-                  scheduleTime = timeArg;
-                  scheduleType = 'daily';
-                  const restParts = parts.substring(timeArg.length).trim();
-                  
-                  // Verificar dias específicos
-                  const daysPattern = /^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*\s+/i;
-                  const daysMatch = restParts.match(daysPattern);
-                  if (daysMatch) {
-                    scheduleDays = daysMatch[0].trim().toLowerCase();
-                    msgContent = restParts.substring(daysMatch[0].length);
-                  } else {
-                    msgContent = restParts;
-                  }
-                } else {
-                  await privateReply('❌ *Formato inválido!*\n\n*Opções:*\n• agenda 30m [msg] — Em 30 min\n• agenda 2h [msg] — Em 2 horas\n• agenda 08:00 [msg] — Diário\n• agenda 08:00 seg,qua [msg]');
+                const timeMatch = parts.match(/^(\d{2}:\d{2})\s+(.+)/s);
+                if (!timeMatch) {
+                  await privateReply('Use: agenda HH:MM [texto]\nEx: agenda 08:00 Bom dia pessoal!\n\nOpcoes avancadas:\nagenda 08:00 seg,qua,sex Bom dia!');
                   continue;
                 }
+                const time = timeMatch[1];
+                let msgContent = timeMatch[2];
+                let days = 'todos';
                 
-                if (!msgContent || !msgContent.trim()) {
-                  await privateReply('❌ Informe a mensagem a ser enviada!');
-                  continue;
+                // Verificar se tem dias específicos
+                const daysMatch = msgContent.match(/^(seg|ter|qua|qui|sex|sab|dom)(,(seg|ter|qua|qui|sex|sab|dom))*\s+/i);
+                if (daysMatch) {
+                  days = daysMatch[0].trim().toLowerCase();
+                  msgContent = msgContent.substring(daysMatch[0].length);
                 }
                 
                 const schedId = 'sch_' + Date.now().toString(36);
-                if (!schedules[selectedGroupId]) schedules[selectedGroupId] = {};
-                schedules[selectedGroupId][schedId] = {
-                  type: scheduleType,
-                  time: scheduleTime,
-                  days: scheduleDays,
+                if (!autoMessages[selectedGroupId]) autoMessages[selectedGroupId] = {};
+                autoMessages[selectedGroupId][schedId] = {
+                  time,
                   text: msgContent,
-                  executeAt,
+                  days,
+                  active: true,
                   creator: privateSender,
-                  createdAt: Date.now(),
-                  active: true
+                  createdAt: Date.now()
                 };
-                saveDB('schedules', schedules);
-                logBotAction('schedule_private', `${schedId} ${scheduleType} em ${selectedGroupName}`);
-                
-                let confirmMsg = `✅ *Agendamento criado!*\n\n🆔 ID: ${schedId}\n`;
-                if (scheduleType === 'once') {
-                  confirmMsg += `⏰ Será enviada em: ${scheduleTime}\n📅 Data/Hora: ${new Date(executeAt).toLocaleString('pt-BR')}\n`;
-                } else {
-                  confirmMsg += `⏰ Horário: ${scheduleTime}\n📅 Dias: ${scheduleDays === 'todos' ? 'Todos' : scheduleDays}\n`;
-                }
-                confirmMsg += `\n📝 Mensagem:\n${msgContent.substring(0, 150)}${msgContent.length > 150 ? '...' : ''}`;
-                
-                await privateReply(confirmMsg);
+                saveDB('autoMessages', autoMessages);
+                logBotAction('schedule_private', `${schedId} as ${time} em ${selectedGroupName}`);
+                await privateReply(`Mensagem agendada!\n\nID: ${schedId}\nHorario: ${time}\nDias: ${days}\nTexto: ${msgContent}`);
                 continue;
               }
               
               // === REMOVER AGENDAMENTO ===
               if (input.startsWith('delagenda ')) {
                 const schedId = input.replace('delagenda ', '').trim();
-                
-                // Verificar no novo sistema
-                if (schedules[selectedGroupId]?.[schedId]) {
-                  delete schedules[selectedGroupId][schedId];
-                  saveDB('schedules', schedules);
-                  logBotAction('del_schedule', `${schedId} em ${selectedGroupName}`);
-                  await privateReply(`✅ Agendamento *${schedId}* removido!`);
+                if (!autoMessages[selectedGroupId] || !autoMessages[selectedGroupId][schedId]) {
+                  await privateReply(`Agendamento *${schedId}* nao encontrado.\nUse *veragenda* para ver a lista.`);
                   continue;
                 }
-                
-                // Verificar no sistema antigo
-                if (autoMessages[selectedGroupId]?.[schedId]) {
-                  delete autoMessages[selectedGroupId][schedId];
-                  saveDB('autoMessages', autoMessages);
-                  logBotAction('del_schedule', `${schedId} em ${selectedGroupName}`);
-                  await privateReply(`✅ Agendamento *${schedId}* removido!`);
-                  continue;
-                }
-                
-                await privateReply(`❌ Agendamento *${schedId}* não encontrado.\nUse *veragenda* para ver a lista.`);
+                delete autoMessages[selectedGroupId][schedId];
+                saveDB('autoMessages', autoMessages);
+                logBotAction('del_schedule', `${schedId} em ${selectedGroupName}`);
+                await privateReply(`Agendamento *${schedId}* removido!`);
                 continue;
               }
               
@@ -5815,113 +5219,6 @@ ${fullText}
                 continue;
               }
               
-              // === GERENCIAR PALAVROES (pelo privado) ===
-              if (input === 'verpalavras') {
-                const s2 = getGroupSettings(selectedGroupId);
-                const palavras = s2.palavroes || [];
-                if (!palavras.length) {
-                  await privateReply('Nenhuma palavra no filtro.\n\nUse: addpalavra [palavra]');
-                  continue;
-                }
-                await privateReply(`*Palavras filtradas — ${selectedGroupName}:*\n\n${palavras.join(', ')}\n\n*Para adicionar:* addpalavra [palavra]\n*Para remover:* delpalavra [palavra]`);
-                continue;
-              }
-              if (input.startsWith('addpalavra ')) {
-                const word = input.replace('addpalavra ', '').trim().toLowerCase();
-                const s2 = getGroupSettings(selectedGroupId);
-                if (!s2.palavroes) s2.palavroes = [];
-                if (!s2.palavroes.includes(word)) {
-                  s2.palavroes.push(word);
-                  saveSettings();
-                  logBotAction('addpalavra_private', `"${word}" em ${selectedGroupName}`);
-                  await privateReply(`Palavra *"${word}"* adicionada ao filtro de *${selectedGroupName}*!`);
-                } else {
-                  await privateReply(`Palavra *"${word}"* já está no filtro.`);
-                }
-                continue;
-              }
-              if (input.startsWith('delpalavra ')) {
-                const word = input.replace('delpalavra ', '').trim().toLowerCase();
-                const s2 = getGroupSettings(selectedGroupId);
-                s2.palavroes = (s2.palavroes || []).filter(p => p !== word);
-                saveSettings();
-                logBotAction('delpalavra_private', `"${word}" em ${selectedGroupName}`);
-                await privateReply(`Palavra *"${word}"* removida do filtro de *${selectedGroupName}*!`);
-                continue;
-              }
-              
-              // === DEFINIR LIMITE DE ADVERTÊNCIAS (pelo privado) ===
-              if (input.startsWith('limitec ')) {
-                const num = parseInt(input.replace('limitec ', '').trim());
-                if (isNaN(num) || num < 1) {
-                  await privateReply('Use: limitec [numero]\nEx: limitec 3');
-                  continue;
-                }
-                const s2 = getGroupSettings(selectedGroupId);
-                s2.warningLimit = num;
-                saveSettings();
-                logBotAction('set_limitec_private', `Limite ${num} em ${selectedGroupName}`);
-                await privateReply(`Limite de advertências definido para *${num}* em *${selectedGroupName}*!`);
-                continue;
-              }
-              
-              // === VER ADVERTÊNCIAS (pelo privado) ===
-              if (input === 'veradv' || input === 'advertencias') {
-                const grpWarns = warnings[selectedGroupId];
-                if (!grpWarns || !Object.keys(grpWarns).length) {
-                  await privateReply(`Nenhuma advertência registrada em *${selectedGroupName}*.`);
-                  continue;
-                }
-                let text = `*Advertências — ${selectedGroupName}:*\n\n`;
-                const s2 = getGroupSettings(selectedGroupId);
-                const limit = s2.warningLimit || 3;
-                Object.entries(grpWarns).forEach(([uid, warns]) => {
-                  if (warns.length > 0) {
-                    text += `📞 +${uid.split('@')[0]}: ${warns.length}/${limit} adv.\n`;
-                    warns.forEach((w, i) => {
-                      text += `   ${i+1}. ${w.motivo || 'Sem motivo'}\n`;
-                    });
-                    text += '\n';
-                  }
-                });
-                text += `\n*Para remover:* rmadv [numero]\nEx: rmadv 5592999999999`;
-                await privateReply(text);
-                continue;
-              }
-              
-              // === REMOVER ADVERTÊNCIAS POR NÚMERO (pelo privado) ===
-              if (input.startsWith('rmadv ')) {
-                const num = input.replace('rmadv ', '').trim().replace(/\D/g, '');
-                const uid = `${num}@s.whatsapp.net`;
-                if (warnings[selectedGroupId]) {
-                  delete warnings[selectedGroupId][uid];
-                  saveDB('warnings', warnings);
-                  logBotAction('rmadv_private', `+${num} em ${selectedGroupName}`);
-                  await privateReply(`Advertências de *+${num}* removidas em *${selectedGroupName}*!`);
-                } else {
-                  await privateReply(`Sem advertências para remover.`);
-                }
-                continue;
-              }
-              
-              // === BANIR POR NÚMERO (pelo privado) ===
-              if (input.startsWith('banir ')) {
-                const num = input.replace('banir ', '').trim().replace(/\D/g, '');
-                if (!num || num.length < 8) {
-                  await privateReply('Use: banir [numero com DDI]\nEx: banir 5592999999999');
-                  continue;
-                }
-                const uid = `${num}@s.whatsapp.net`;
-                try {
-                  await sock.groupParticipantsUpdate(selectedGroupId, [uid], 'remove');
-                  logBotAction('ban_private', `+${num} em ${selectedGroupName}`);
-                  await privateReply(`✅ Usuário *+${num}* banido de *${selectedGroupName}*!`);
-                } catch (err) {
-                  await privateReply(`❌ Erro ao banir: ${err.message}`);
-                }
-                continue;
-              }
-
               // === VER EXPIRAÇÃO DO PLANO (para admins) ===
               if (input === 'expira' || input === 'vencimento' || input === 'assinatura') {
                 const sub = checkSubscription(selectedGroupId);
@@ -5939,8 +5236,8 @@ ${fullText}
               }
               
               // === OPÇÃO NÃO RECONHECIDA ===
-              const validInputs = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar','verpalavras','veradv','advertencias'];
-              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs ','addpalavra ','delpalavra ','limitec ','rmadv ','banir ','anunciar ','delproduto ','verprodutos','loja '];
+              const validInputs = ['1','2','3','4','5','6','7','8','9','10','menu','sair','exit','trocar','mudar','vercmd','vercomandos','veragenda','agendamentos','plano','logs','stats','expira','vencimento','assinatura','cancelar'];
+              const startsValid = ['abrir ','fechar ','bemvindo ','saida ','regras ','addcmd ','delcmd ','delagenda ','agenda ','ativar ','renovar ','logs '];
               
               if (!validInputs.includes(input) && !startsValid.some(s => input.startsWith(s))) {
                 await privateReply(`Opcao nao reconhecida.\n\nEnvie *menu* para ver todas as opcoes.\nOu envie um *numero* (1-10) para ativar/desativar funcoes.`);
@@ -6361,50 +5658,10 @@ wa.me/${OWNER_NUMBER}
     if (action === 'remove') {
       for (const participant of participants) {
         if (settings.leaveMsg) {
-          try {
-            const meta = await sock.groupMetadata(groupId);
-            const memberCount = meta.participants.length;
-            const rawNum = participant.split('@')[0];
-            let numFormatted = `+${rawNum}`;
-            if (rawNum.startsWith('55') && rawNum.length >= 12) {
-              const ddd = rawNum.substring(2, 4);
-              const rest = rawNum.substring(4);
-              numFormatted = rest.length >= 9
-                ? `+55 ${ddd} ${rest.substring(0, 5)}-${rest.substring(5)}`
-                : `+55 ${ddd} ${rest.substring(0, 4)}-${rest.substring(4)}`;
-            }
-            // Suporte a replaceVars com aliases em português
-            const leaveVars = {
-              user: `@${rawNum}`,
-              group: meta.subject || 'o grupo',
-              desc: meta.desc || '',
-              numero: numFormatted,
-              membros: String(memberCount),
-            };
-            let leaveText = settings.leaveMsg;
-            // Substituições manuais adicionais para compatibilidade
-            leaveText = leaveText
-              .replace(/\{nome\}/gi, `@${rawNum}`)
-              .replace(/@nome/gi, `@${rawNum}`)
-              .replace(/\{numero\}/gi, numFormatted)
-              .replace(/\{membros\}/gi, String(memberCount))
-              .replace(/\{total\}/gi, String(memberCount))
-              .replace(/\{group\}/gi, meta.subject || 'o grupo')
-              .replace(/\{grupo\}/gi, meta.subject || 'o grupo')
-              .replace(/@group/gi, meta.subject || 'o grupo')
-              .replace(/@grupo/gi, meta.subject || 'o grupo')
-              .replace(/\{user\}/gi, `@${rawNum}`)
-              .replace(/@user/gi, `@${rawNum}`);
-            await sock.sendMessage(groupId, {
-              text: leaveText,
-              mentions: [participant],
-            }).catch(() => {});
-          } catch {
-            await sock.sendMessage(groupId, {
-              text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
-              mentions: [participant],
-            }).catch(() => {});
-          }
+          await sock.sendMessage(groupId, {
+            text: settings.leaveMsg.replace('{nome}', `@${participant.split('@')[0]}`),
+            mentions: [participant],
+          }).catch(() => {});
         }
       }
     }
