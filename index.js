@@ -4608,7 +4608,8 @@ const connectBot = async () => {
         // ===========================================================
         if (!isGroup) {
           const privateSender = sender;
-          const privateReply = (text) => sock.sendMessage(groupId, { text }, { quoted: message });
+          // CORREÇÃO: Em mensagens privadas, groupId É o sender, então use sender diretamente
+          const privateReply = (text) => sock.sendMessage(sender, { text }, { quoted: message });
           const ownerPrivate = isOwner(privateSender);
           
           // Verificar se o usuário está em um fluxo de configuração
